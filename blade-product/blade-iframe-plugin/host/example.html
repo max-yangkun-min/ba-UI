@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blade iframe plugin</title>
+    <style>
+      /* 示例页自己的中性配色。插件不改产品任何颜色，这里也只用于演示容器本身。 */
+      :root { color-scheme: light; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+      html, body { margin: 0; height: 100%; background: #f3f4f6; color: #111827; }
+      body { display: flex; flex-direction: column; }
+      header, .bar { display: flex; gap: 8px; align-items: center; padding: 10px 12px; }
+      header { justify-content: space-between; background: #ffffff; border-bottom: 1px solid #e5e7eb; }
+      .bar { border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; background: #ffffff; }
+      input { flex: 1; min-width: 0; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; background: #ffffff; color: #111827; }
+      button { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; background: #ffffff; color: #111827; }
+      button.active, button.primary { background: #2563eb; color: #ffffff; border-color: #2563eb; }
+      iframe { flex: 1; width: 100%; border: 0; background: #ffffff; }
+      .status { font-size: 13px; color: #047857; }
+      .bar.links { flex-wrap: wrap; }
+      .bar.links .hint { font-size: 13px; color: #6b7280; }
+      .bar.links a { font-size: 13px; color: #2563eb; text-decoration: none; }
+      .bar.links a:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>Blade iframe plugin</strong>
+      <span id="status" class="status">waiting for iframe</span>
+    </header>
+    <div class="bar">
+      <button data-key="ba" class="active">BA</button>
+      <button data-key="skills">BH 能力中心</button>
+      <button data-key="solutions">BH Solutions</button>
+      <input id="token" type="password" placeholder="BO Access Token" />
+      <button id="send" class="primary">Send Token</button>
+    </div>
+    <div class="bar links">
+      <span class="hint">免登录链接：</span>
+      <a id="link-ba" href="#" target="_blank" rel="noopener">BA 工作台</a>
+      <a id="link-bh-auto" href="#" target="_blank" rel="noopener">能力中心（一键登录）</a>
+      <a id="link-bh-direct" href="#" target="_blank" rel="noopener">能力中心（?token= 直链）</a>
+    </div>
+    <iframe id="frame" allow="clipboard-read; clipboard-write"></iframe>
+    <script src="./blade-embed-host.js"></script>
+    <script>
+      var ba = new URLSearchParams(location.search).get("ba") || "http://127.0.0.1:8020";
+      var bh = new URLSearchParams(location.search).get("bh") || "http://127.0.0.1:8010";
+      var urls = BladeEmbedHost.urls({ ba: ba, bh: bh });
+      var frame = document.getElementById("frame");
+      var status = document.getElementById("status");
+      var tokenInput = document.getElementById("token");
+      var linkBa = document.getElementById("link-ba");
+      var linkBhAuto = document.getElementById("link-bh-auto");
+      var linkBhDirect = document.getElementById("link-bh-direct");
+      var current = "ba";
+      var host;
+      function setStatus(text) { status.textContent = text; }
+      function updateLinks() {
+        var token = BladeEmbedHost.normalizeToken(tokenInput.value);
+        if (!token) {
+          [linkBa, linkBhAuto, linkBhDirect].forEach(function (a) { a.setAttribute("href", "#"); });
+          return;
+        }
+        linkBa.setAttribute("href", BladeEmbedHost.autologinUrl(ba, token, { next: "/chat" }));
+        linkBhAuto.setAttribute("href", BladeEmbedHost.autologinUrl(bh, token, { next: "/skills" }));
+        linkBhDirect.setAttribute("href", BladeEmbedHost.urlToken(urls.skills, token));
+      }
+      function bindCurrent() {
+        if (host) host.destroy();
+        frame.src = urls[current];
+        host = BladeEmbedHost.bind(frame, {
+          getToken: function () { return tokenInput.value; },
+          onStatus: function (state) {
+            if (state === "ready") setStatus("iframe ready");
+            if (state === "sent") setStatus("token sent");
+            if (state === "authenticated") setStatus("authenticated");
+          },
+        });
+      }
+      document.querySelectorAll("button[data-key]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          document.querySelectorAll("button[data-key]").forEach(function (item) { item.classList.remove("active"); });
+          button.classList.add("active");
+          current = button.getAttribute("data-key");
+          bindCurrent();
+        });
+      });
+      document.getElementById("send").addEventListener("click", function () { host && host.sendToken(); });
+      tokenInput.addEventListener("input", function () {
+        updateLinks();
+        host && host.sendToken();
+      });
+      tokenInput.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") host && host.sendToken();
+      });
+      updateLinks();
+      bindCurrent();
+    </script>
+  </body>
+</html>

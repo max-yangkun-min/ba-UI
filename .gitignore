@@ -1,0 +1,41 @@
+# secrets and local credentials
+.env
+.env.local
+.env.*.local
+*.local
+*.local.json
+.lab-login.local.json
+proxy.env
+!proxy.env.example
+*.pem
+*.key
+id_rsa
+id_ed25519
+
+# generated caches
+node_modules/
+dist/
+__pycache__/
+*.py[cod]
+.tmp-dev-logs/
+.tmp-*
+
+# local scratch, not product source
+blade-product/embed-app/.dump-skills.py
+blade-product/embed-app/.skill-catalog-tmp.json
+blade-product/embed-app/.skill-summary.txt
+blade-product/blade-ui-plugin/_extract_kb.py
+blade-product/blade-ui-plugin/_scan_demo.py
+blade-product/blade-ui-plugin/files/_kb_page.js
+blade-product/blade-ui-plugin/files/_kb_probe.html
+blade-product/blade-ui-plugin/files/_sidebar.js
+
+# archives and earlier delivery bundles
+*.tar.gz
+*.zip
+deliver/
+
+# editor and agent tooling
+.claude/
+.cursor/
+.playwright-cli/

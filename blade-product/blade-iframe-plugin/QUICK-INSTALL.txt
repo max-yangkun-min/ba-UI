@@ -1,0 +1,15 @@
+# Blade iframe / 免登录插件 —— 快速安装
+#
+# 1) 拷到目标机（已部署 box-ba / box-bh 的机器）
+#    scp -r blade-iframe-plugin root@<SERVER>:/opt/
+# 2) 安装
+#    ssh root@<SERVER> 'sh /opt/blade-iframe-plugin/install.sh'
+# 3) 自检
+#    ssh root@<SERVER> 'sh /opt/blade-iframe-plugin/status.sh'
+# 4) 浏览器 Ctrl+F5 硬刷新
+#
+# 免登录链接（不出现登录页）：
+#    http://<SERVER>:8020/autologin.html?token=<BO Access Token>
+#
+# 卸载：
+#    sh /opt/blade-iframe-plugin/uninstall.sh

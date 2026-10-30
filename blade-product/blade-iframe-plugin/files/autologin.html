@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>正在进入…</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #0f1115; color: #e5e7eb;
+  }
+  .box { text-align: center; max-width: 560px; padding: 24px; }
+  .spin {
+    width: 28px; height: 28px; margin: 0 auto 14px; border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, .2); border-top-color: #60a5fa;
+    animation: sp .8s linear infinite;
+  }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .msg { font-size: 14px; }
+  .err { color: #fca5a5; line-height: 1.7; font-size: 14px; text-align: left; }
+  code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="box" id="box">
+  <div class="spin"></div>
+  <div class="msg" id="msg">正在进入工作台…</div>
+</div>
+<script>
+/* BLADE_AUTOLOGIN_BEGIN
+ * 服务端免登录入口（BA 与 BH 共用同一份页面）。
+ *
+ * 用法：
+ *   http://<SERVER>:8020/autologin.html?token=<BO Access Token>&refresh_token=<可选>&next=<可选>   # 工作台
+ *   http://<SERVER>:8010/autologin.html?token=<BO Access Token>&next=/skills                     # 能力中心
+ *
+ * 做三件事：
+ *   1. 把 token / refresh_token 种成同源 Cookie（Cookie 按主机共享、不分端口，
+ *      所以 :8020 与 :8010 都认）
+ *   2. 用 replaceState 把 token 从地址栏抹掉
+ *   3. 探一次 /api/auth/me 确认会话真的生效，成功才跳到 next（默认：BA=/chat，BH=/）
+ *
+ * 安全边界：
+ *   - 不带任何 token 时直接把请求让给目标页，行为与未装插件时完全一致
+ *   - 令牌无效时停在当前页并给出明确提示，不会反复跳转
+ *   - Cookie 的 max-age 由 token 自身的 exp 推算，并钳制到浏览器上限 400 天
+ *     （Chrome 104+ 会把超过 400 天的 Cookie 一律截断），因此会话寿命与 token 对齐
+ */
+(function () {
+  "use strict";
+
+  // 浏览器上限：Chrome 104+ 会把 max-age > 400 天的 Cookie 一律截断成 400 天。
+  var BROWSER_MAX_AGE = 60 * 60 * 24 * 400;
+  // 用户一旦关掉浏览器也保留会话的下限，避免令牌快到期时 Cookie 立刻过期。
+  var MIN_MAX_AGE = 60 * 60 * 24;
+  // \u9ed8\u8ba4\u843d\u70b9\uff1a\u6309\u670d\u52a1\u7aef\u53e3\u533a\u5206\u3002BA(8020) \u964d\u5728\u5de5\u4f5c\u53f0 /chat\uff1b
+  // BH(8010) \u6ca1\u6709 /chat\uff0c\u964d\u5728\u80fd\u529b\u4e2d\u5fc3\u9996\u9875 /\u3002\u5b9e\u9645\u90e8\u7f72\u7aef\u53e3\u4e0d\u540c\u65f6\u7528 &next= \u660e\u786e\u6307\u5b9a\u5373\u53ef\u3002
+  var DEFAULT_NEXT = window.location.port === "8010" ? "/" : "/chat";
+
+  var params = new URLSearchParams(window.location.search);
+  var token = params.get("token") || "";
+  var refresh = params.get("refresh_token") || "";
+  var next = params.get("next") || DEFAULT_NEXT;
+
+  var box = document.getElementById("box");
+  var msg = document.getElementById("msg");
+
+  function fail(html) {
+    box.innerHTML = '<div class="err">' + html + "</div>";
+  }
+
+  function cleanUrl() {
+    try {
+      window.history.replaceState(null, "", window.location.pathname);
+    } catch (e) {}
+  }
+
+  // 从 JWT 的 exp 推算 Cookie 寿命，让会话与令牌同步到期，并钳制到浏览器上限。
+  // 解析失败时退回上限值（行为与旧版一致）。
+  function maxAgeFor(value) {
+    try {
+      var parts = String(value).split(".");
+      if (parts.length !== 3) return BROWSER_MAX_AGE;
+      var base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+      while (base64.length % 4) base64 += "=";
+      var payload = JSON.parse(decodeURIComponent(escape(atob(base64))));
+      if (!payload || typeof payload.exp !== "number") return BROWSER_MAX_AGE;
+      var seconds = Math.floor(payload.exp - Date.now() / 1000);
+      if (!isFinite(seconds)) return BROWSER_MAX_AGE;
+      return Math.max(MIN_MAX_AGE, Math.min(BROWSER_MAX_AGE, seconds));
+    } catch (e) {
+      return BROWSER_MAX_AGE;
+    }
+  }
+
+  function setCookie(name, value) {
+    document.cookie =
+      name + "=" + encodeURIComponent(value) +
+      "; path=/; max-age=" + maxAgeFor(value) + "; SameSite=Lax";
+  }
+
+  if (!token && !refresh) {
+    window.location.replace(next);
+    return;
+  }
+
+  if (token) setCookie("blade_token", token);
+  if (refresh) setCookie("blade_refresh_token", refresh);
+  cleanUrl();
+
+  window.fetch("/api/auth/me", { credentials: "same-origin", cache: "no-store" })
+    .then(function (response) {
+      if (response.ok) {
+        window.location.replace(next);
+        return null;
+      }
+      return response.text().then(function (text) {
+        fail(
+          "会话未生效（HTTP " + response.status + "）。<br>" +
+          "令牌可能已过期或被吊销，请重新获取链接。<br><br>" +
+          "<code>" + String(text).slice(0, 200) + "</code>"
+        );
+      });
+    })
+    .catch(function (error) {
+      if (msg) msg.textContent = "";
+      fail("请求失败：" + String(error && error.message ? error.message : error));
+    });
+})();
+/* BLADE_AUTOLOGIN_END */
+</script>
+</body>
+</html>

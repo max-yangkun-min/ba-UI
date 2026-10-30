@@ -1,0 +1,48 @@
+@font-face {
+  font-family: "Alimama ShuHeiTi";
+  src: url("/fonts/AlimamaShuHeiTi.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "DIN Alternate";
+  src: url("/fonts/DINAlternate-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --brand: #237cff;
+  --brand-dark: #0053ca;
+  --brand-hover: #1a6fe6;
+  --link: #0075eb;
+  --danger: #ff5454;
+  --success: #21b96c;
+  --warning: #ffb600;
+  --chart-2: #9fdb1d;
+  --chart-3: #14c9c9;
+  --chart-4: #8d4eda;
+  --chart-5: #ff7d00;
+  --text-1: #323233;
+  --text-2: #646566;
+  --text-3: #969799;
+  --text-4: #c8c9cc;
+  --text-5: #ffffff;
+  --bg-page: #f5f7fa;
+  --bg-card: #ffffff;
+  --bg-soft: #f5f7fa;
+  --bg-selected: #e8f3ff;
+  --line: #e8ecf3;
+  --line-row: #eeeeee;
+  --input-border: #dcdfe6;
+  --header-h: 48px;
+  --sidebar-w: 188px;
+  --radius: 4px;
+  --shadow: 0 1px 2px rgba(50, 50, 51, 0.04);
+  --font: "Microsoft YaHei", "微软雅黑", "PingFang SC", "Noto Sans SC", sans-serif;
+  --font-display: "Alimama ShuHeiTi", "Microsoft YaHei", sans-serif;
+  --font-num: "DIN Alternate", "Alimama ShuHeiTi", "Microsoft YaHei", sans-serif;
+}

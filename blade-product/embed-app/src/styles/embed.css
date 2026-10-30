@@ -1,0 +1,14 @@
+.embed-app {
+  height: 100vh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-page);
+}
+
+.embed-app > .prompt-studio {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}

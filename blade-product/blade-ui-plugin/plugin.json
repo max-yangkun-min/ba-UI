@@ -1,0 +1,23 @@
+{
+  "name": "blade-ui-plugin",
+  "displayName": "BA/BH 界面规范样式",
+  "version": "0.2.99",
+  "kind": "runtime-addon",
+  "independentOf": "blade-iframe-plugin",
+  "targets": [
+    {
+      "service": "ba",
+      "container": "box-ba",
+      "port": 8020,
+      "distCandidates": ["/app/web/apps/web/dist", "/app/web/dist"]
+    },
+    {
+      "service": "bh",
+      "container": "box-bh",
+      "port": 8010,
+      "distCandidates": ["/app/web/dist", "/app/web/apps/web/dist"]
+    }
+  ],
+  "entry": "install.sh",
+  "description": "按界面规范深度调整已部署 Blade Agent / Blade Hub 的颜色、字体、导航、按钮、输入、卡片、表格和弹层，不改业务代码、不重建镜像。"
+}

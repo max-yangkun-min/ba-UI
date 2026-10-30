@@ -1,0 +1,134 @@
+[
+  {
+    "name": "制度合规核对",
+    "id": 21,
+    "skills": [
+      "superadmin/zhi-du-he-gui-he-dui"
+    ],
+    "skill_files": [
+      "制度合规核对/SKILL.md"
+    ]
+  },
+  {
+    "name": "政务数字化材料",
+    "id": 20,
+    "skills": [
+      "superadmin/zheng-wu-shu-zi-hua-cai-liao"
+    ],
+    "skill_files": [
+      "政务数字化材料/SKILL.md"
+    ]
+  },
+  {
+    "name": "信息报送",
+    "id": 19,
+    "skills": [
+      "superadmin/xin-xi-bao-song"
+    ],
+    "skill_files": [
+      "信息报送/SKILL.md"
+    ]
+  },
+  {
+    "name": "督查推进",
+    "id": 18,
+    "skills": [
+      "superadmin/du-cha-tui-jin"
+    ],
+    "skill_files": [
+      "督查推进/SKILL.md"
+    ]
+  },
+  {
+    "name": "会议安排",
+    "id": 17,
+    "skills": [
+      "superadmin/hui-yi-an-pai"
+    ],
+    "skill_files": [
+      "会议安排/SKILL.md"
+    ]
+  },
+  {
+    "name": "会议纪要",
+    "id": 16,
+    "skills": [
+      "superadmin/hui-yi-ji-yao-zheng-li"
+    ],
+    "skill_files": [
+      "会议纪要/SKILL.md"
+    ]
+  },
+  {
+    "name": "简报摘要",
+    "id": 15,
+    "skills": [
+      "superadmin/jian-bao-zhai-yao"
+    ],
+    "skill_files": [
+      "简报摘要/SKILL.md"
+    ]
+  },
+  {
+    "name": "材料综合",
+    "id": 14,
+    "skills": [
+      "superadmin/cai-liao-zong-he"
+    ],
+    "skill_files": [
+      "材料综合/SKILL.md"
+    ]
+  },
+  {
+    "name": "合同审查",
+    "id": 13,
+    "skills": [
+      "superadmin/he-tong-shen-cha"
+    ],
+    "skill_files": [
+      "合同审查/SKILL.md"
+    ]
+  },
+  {
+    "name": "制度文件撰写",
+    "id": 12,
+    "skills": [
+      "superadmin/zhi-du-wen-jian-zhuan-xie"
+    ],
+    "skill_files": [
+      "制度文件撰写/SKILL.md"
+    ]
+  },
+  {
+    "name": "幻灯片专家",
+    "id": 11,
+    "skills": [
+      "BladeAI/ppt-sheng-cheng-yu-bian-ji"
+    ],
+    "skill_files": [
+      "幻灯片专家/SKILL.md"
+    ]
+  },
+  {
+    "name": "人事专家",
+    "id": 10,
+    "skills": [],
+    "skill_files": []
+  },
+  {
+    "name": "文档处理专家",
+    "id": 6,
+    "skills": [
+      "superadmin/docx",
+      "superadmin/xlsx",
+      "superadmin/pptx",
+      "superadmin/pdf"
+    ],
+    "skill_files": [
+      "文档处理专家/skills/superadmin/docx/SKILL.md",
+      "文档处理专家/skills/superadmin/xlsx/SKILL.md",
+      "文档处理专家/skills/superadmin/pptx/SKILL.md",
+      "文档处理专家/skills/superadmin/pdf/SKILL.md"
+    ]
+  }
+]

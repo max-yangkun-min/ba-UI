@@ -1,0 +1,23 @@
+{
+  "name": "blade-iframe-plugin",
+  "displayName": "BA/BH iframe Token 桥",
+  "version": "1.1.26",
+  "kind": "runtime-addon",
+  "independentOf": "blade-service-deployer",
+  "targets": [
+    {
+      "service": "ba",
+      "container": "box-ba",
+      "port": 8020,
+      "distCandidates": ["/app/web/apps/web/dist", "/app/web/dist"]
+    },
+    {
+      "service": "bh",
+      "container": "box-bh",
+      "port": 8010,
+      "distCandidates": ["/app/web/dist", "/app/web/apps/web/dist"]
+    }
+  ],
+  "entry": "install.sh",
+  "description": "把跨站 iframe Token 认证桥安装到已部署的 Blade Agent / Blade Hub，不改部署包、不重建镜像。"
+}

@@ -1,0 +1,653 @@
+/* blade-ui-plugin 0.2.53 — Blade Hub
+ * 对齐《UI界面设计规范》V1.0.4。Hub 用空格分隔的 RGB 通道，且大量按钮写死 Tailwind 色。
+ * 不改 iframe 插件对 aside 的隐藏。
+ */
+@font-face {
+  font-family: "Alimama ShuHeiTi";
+  src: url("/blade-ui-fonts/AlimamaShuHeiTi.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "DIN Alternate";
+  src: url("/blade-ui-fonts/DINAlternate-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root,
+[data-theme="light"],
+[data-theme="dark"] {
+  --background: 245 247 250 !important;
+  --foreground: 50 50 51 !important;
+  --muted: 245 247 250 !important;
+  --muted-foreground: 100 101 102 !important;
+  --primary: 35 124 255 !important;
+  --primary-strong: 0 83 202 !important;
+  --primary-soft: 232 243 255 !important;
+  --primary-foreground: 255 255 255 !important;
+  --ring: 35 124 255 !important;
+  --border: 220 223 230 !important;
+  --sidebar: 255 255 255 !important;
+  --card: 255 255 255 !important;
+  --destructive: 255 84 84 !important;
+}
+
+html,
+body,
+button,
+input,
+textarea,
+select {
+  font-family: "Microsoft YaHei", "微软雅黑", "PingFang SC", "Noto Sans SC", sans-serif;
+}
+
+body {
+  font-size: 14px;
+  line-height: 22px;
+  background: #f5f7fa;
+  color: #323233;
+}
+
+div.min-h-screen[class*="bg-gray-950"],
+main {
+  background: #f5f7fa !important;
+  color: #323233;
+}
+
+h1 {
+  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 26px;
+  color: #323233;
+}
+
+h2 {
+  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  color: #323233;
+}
+
+[data-blade-ui-brand="true"] {
+  font-family: "Alimama ShuHeiTi", "Microsoft YaHei", sans-serif !important;
+  font-size: 22px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0.5px;
+}
+
+.tabular-nums {
+  font-family: "DIN Alternate", "Alimama ShuHeiTi", "Microsoft YaHei", sans-serif;
+}
+
+[data-blade-ui-topbar="true"] {
+  min-height: 48px !important;
+  background: #237cff !important;
+  color: #ffffff !important;
+  font-size: 14px;
+}
+
+[data-blade-ui-topbar="true"] svg,
+[data-blade-ui-topbar="true"] a,
+[data-blade-ui-topbar="true"] button {
+  color: #ffffff;
+}
+
+aside[class*="bg-gray-900"] {
+  background: #ffffff !important;
+  border-color: #e8ecf3 !important;
+  color: #323233 !important;
+}
+
+[data-blade-ui-nav="item"],
+[data-blade-ui-nav="on"] {
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 16px !important;
+  border-radius: 0 !important;
+  border-left: 3px solid transparent !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  line-height: 22px !important;
+  gap: 8px !important;
+  color: #646566 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+[data-blade-ui-nav="item"]:hover {
+  background: #f5f7fa !important;
+  color: #323233 !important;
+}
+
+[data-blade-ui-nav="on"],
+[data-blade-ui-nav="on"]:hover {
+  background: #f0f6ff !important;
+  color: #237cff !important;
+  border-left-color: #237cff !important;
+  font-weight: 500 !important;
+}
+
+[data-blade-ui-nav] svg {
+  width: 16px !important;
+  height: 16px !important;
+  flex: none;
+}
+
+button {
+  border-radius: 4px !important;
+}
+
+[data-blade-ui-btn="primary"] {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 16px !important;
+  background: #237cff !important;
+  border: 1px solid #237cff !important;
+  color: #ffffff !important;
+  border-radius: 4px !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  line-height: 22px !important;
+}
+
+[data-blade-ui-btn="primary"]:hover {
+  background: #1a6fe6 !important;
+  border-color: #1a6fe6 !important;
+}
+
+[data-blade-ui-btn="primary-sm"] {
+  height: 24px !important;
+  min-height: 24px !important;
+  padding: 0 8px !important;
+  background: #237cff !important;
+  border: 1px solid #237cff !important;
+  color: #ffffff !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  line-height: 20px !important;
+}
+
+[data-blade-ui-btn="danger"] {
+  height: 32px !important;
+  padding: 0 16px !important;
+  background: #ff5454 !important;
+  border: 1px solid #ff5454 !important;
+  color: #ffffff !important;
+  border-radius: 4px !important;
+  font-size: 14px !important;
+}
+
+[class~="rounded-full"] {
+  border-radius: 9999px !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+select {
+  min-height: 32px;
+  border-radius: 4px !important;
+  border-color: #dcdfe6 !important;
+  background: #ffffff !important;
+  color: #323233 !important;
+  font-size: 14px !important;
+}
+
+textarea {
+  border-radius: 4px !important;
+  border-color: #dcdfe6 !important;
+  background: #ffffff !important;
+  color: #323233 !important;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #c8c9cc !important;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: #237cff;
+  min-height: 0;
+}
+
+[data-blade-ui-field="true"] {
+  height: 32px !important;
+  min-height: 32px !important;
+  border-radius: 4px !important;
+  border: 1px solid #dcdfe6 !important;
+  background: #ffffff !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+[data-blade-ui-field="true"]:focus-within {
+  border-color: #237cff !important;
+}
+
+[data-blade-ui-field="true"] input {
+  height: 30px;
+  min-height: 0;
+  border: none !important;
+  background: transparent !important;
+  font-size: 14px !important;
+  color: #323233 !important;
+}
+
+[data-blade-ui-logo="hide"] {
+  display: none !important;
+}
+
+[data-blade-ui-card="true"] {
+  background: #ffffff !important;
+  border: 1px solid #e8ecf3 !important;
+  border-radius: 4px !important;
+  box-shadow: 0 1px 2px rgba(50, 50, 51, 0.04) !important;
+  padding: 16px !important;
+  gap: 16px !important;
+  color: #323233 !important;
+}
+
+[data-blade-ui-card="true"]:hover {
+  background: #f0f6ff !important;
+  border-color: #237cff !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+[data-blade-ui-card="true"] > span[class*="absolute"][class*="inset-y-0"] {
+  display: none !important;
+}
+
+:is(div, ul, section):has(> [data-blade-ui-card="true"]) {
+  gap: 16px !important;
+}
+
+[data-blade-ui-card-icon="true"] {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 4px !important;
+  background: #e8f3ff !important;
+  color: #237cff !important;
+}
+
+[data-blade-ui-card-title="true"] {
+  font-family: "Microsoft YaHei", "微软雅黑", sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  line-height: 22px !important;
+  color: #323233 !important;
+}
+
+[data-blade-ui-card-desc="true"] {
+  font-size: 12px !important;
+  line-height: 20px !important;
+  color: #646566 !important;
+}
+
+[class*="text-gray-100"],
+[class*="text-gray-50"] {
+  color: #323233 !important;
+}
+
+[class*="text-gray-400"],
+[class*="text-gray-500"],
+[class*="text-gray-300"] {
+  color: #646566 !important;
+}
+
+[data-blade-ui-btn="primary"],
+[data-blade-ui-btn="primary-sm"],
+[data-blade-ui-btn="danger"],
+[data-blade-ui-topbar="true"],
+[data-blade-ui-topbar="true"] * {
+  color: #ffffff !important;
+}
+
+table {
+  border-collapse: collapse;
+  background: #ffffff;
+  color: #323233;
+  font-size: 14px;
+}
+
+th {
+  height: 40px;
+  background: #f5f7fa !important;
+  color: #323233 !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  border-bottom: 1px solid #e8ecf3 !important;
+}
+
+td {
+  background: #ffffff;
+  color: #323233;
+  font-size: 14px;
+  line-height: 22px;
+  border-bottom: 1px solid #eeeeee !important;
+}
+
+[role="dialog"] {
+  border-radius: 4px !important;
+  background: #ffffff !important;
+  color: #323233 !important;
+  border: 1px solid #e8ecf3 !important;
+  box-shadow: 0 12px 32px rgba(50, 50, 51, 0.16) !important;
+}
+
+[role="dialog"] h1,
+[role="dialog"] h2,
+[role="dialog"] h3 {
+  font-family: "Microsoft YaHei", "微软雅黑", sans-serif !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: #323233 !important;
+}
+
+[role="menu"],
+[role="listbox"] {
+  background: #ffffff !important;
+  color: #323233 !important;
+  border: 1px solid #e8ecf3 !important;
+  border-radius: 4px !important;
+  box-shadow: 0 8px 24px rgba(50, 50, 51, 0.12) !important;
+}
+
+[role="menuitem"],
+[role="option"] {
+  min-height: 32px;
+  border-radius: 4px !important;
+  font-size: 14px !important;
+  line-height: 22px !important;
+  color: #323233 !important;
+}
+
+[role="menuitem"][data-highlighted],
+[role="menuitem"]:hover,
+[role="option"][data-highlighted] {
+  background: #f5f7fa !important;
+}
+
+[role="tab"] {
+  height: 36px;
+  font-size: 14px !important;
+  color: #646566 !important;
+}
+
+[role="tab"][aria-selected="true"],
+[role="tab"][data-state="active"] {
+  color: #237cff !important;
+  font-weight: 600 !important;
+}
+
+hr {
+  border-color: #e8ecf3 !important;
+}
+
+span[class*="rounded-full"][class*="px-2"],
+span[class*="rounded-full"][class*="text-xs"] {
+  display: inline-flex;
+  align-items: center;
+  height: 22px !important;
+  padding: 0 8px !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  line-height: 20px !important;
+  background: #f2f3f5 !important;
+  color: #646566 !important;
+}
+
+span[class*="text-green-"],
+span[class*="bg-green-"],
+span[class*="text-emerald-"],
+span[class*="bg-emerald-"] {
+  background: rgba(33, 185, 108, 0.12) !important;
+  color: #21b96c !important;
+}
+
+span[class*="text-red-"],
+span[class*="bg-red-"] {
+  background: rgba(255, 84, 84, 0.12) !important;
+  color: #ff5454 !important;
+}
+
+span[class*="text-amber-"],
+span[class*="text-yellow-"],
+span[class*="bg-amber-"] {
+  background: rgba(255, 182, 0, 0.16) !important;
+  color: #ad7b00 !important;
+}
+
+[data-blade-ui-nav="item"] {
+  color: #323233 !important;
+}
+
+[data-blade-ui-nav="on"] {
+  color: #237cff !important;
+}
+
+h1[class*="text-teal-"],
+h2[class*="text-teal-"],
+h3[class*="text-teal-"],
+h4[class*="text-teal-"] {
+  color: #323233 !important;
+}
+
+span[class*="text-teal-"],
+span[class*="bg-teal-"] {
+  background: #e8f3ff !important;
+  color: #237cff !important;
+}
+
+svg[class*="text-teal-"] {
+  color: #237cff !important;
+}
+
+[class*="bg-teal-600"],
+[class*="bg-emerald-600"],
+[class*="bg-green-600"] {
+  background-color: #237cff !important;
+  color: #ffffff !important;
+}
+
+/* 工作流、数据源沿用同一套浅灰底、白卡片、主色和标题。 */
+html[data-blade-ui-page="workflows"] body,
+html[data-blade-ui-page="workflows"] main,
+html[data-blade-ui-page="data-sources"] body,
+html[data-blade-ui-page="data-sources"] main {
+  background: #f5f7fa !important;
+  color: #323233 !important;
+}
+
+html[data-blade-ui-page="workflows"] h1,
+html[data-blade-ui-page="data-sources"] h1 {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  line-height: 26px !important;
+  color: #323233 !important;
+}
+
+html[data-blade-ui-page="workflows"] h2,
+html[data-blade-ui-page="data-sources"] h2 {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  line-height: 24px !important;
+  color: #323233 !important;
+}
+
+html[data-blade-ui-page="workflows"] [class*="rounded-xl"][class*="border"],
+html[data-blade-ui-page="workflows"] [class*="rounded-2xl"][class*="border"],
+html[data-blade-ui-page="data-sources"] [class*="rounded-xl"][class*="border"],
+html[data-blade-ui-page="data-sources"] [class*="rounded-2xl"][class*="border"] {
+  border-radius: 4px !important;
+  border-color: #e8ecf3 !important;
+  background: #ffffff !important;
+  color: #323233 !important;
+}
+
+html[data-blade-ui-page="workflows"] [class*="bg-gray-950"],
+html[data-blade-ui-page="data-sources"] [class*="bg-gray-950"] {
+  background-color: #f5f7fa !important;
+  color: #323233 !important;
+}
+
+html[data-blade-ui-page="workflows"] [class*="bg-gray-900"],
+html[data-blade-ui-page="workflows"] [class*="bg-gray-800"],
+html[data-blade-ui-page="data-sources"] [class*="bg-gray-900"],
+html[data-blade-ui-page="data-sources"] [class*="bg-gray-800"] {
+  background-color: #ffffff !important;
+  color: #323233 !important;
+}
+
+html[data-blade-ui-page="workflows"] [class*="border-gray-"],
+html[data-blade-ui-page="data-sources"] [class*="border-gray-"] {
+  border-color: #e8ecf3 !important;
+}
+
+html[data-blade-ui-page="workflows"] [class*="bg-blue-600"],
+html[data-blade-ui-page="data-sources"] [class*="bg-blue-600"] {
+  height: 32px !important;
+  min-height: 32px !important;
+  border-radius: 4px !important;
+  background: #237cff !important;
+  color: #ffffff !important;
+}
+
+/* 0.2.90 控制台横条。w-fit 的横向 flex 在中文下会收成一字宽，页签和成组图标按钮都中招。
+   对话侧栏不套这条，否则侧栏会被收成内容宽度。
+   0.2.94 页面主列（flex-1 / max-w-* / h-full / h-screen）也不套，避免整列被收成内容宽度。 */
+div.flex.w-fit:not(#unified-shell-sidebar *):not(.flex-1):not([class*="max-w-"]):not([class*="h-full"]):not([class*="h-screen"]),
+div.flex[class*="w-fit"]:not(#unified-shell-sidebar *):not(.flex-1):not([class*="max-w-"]):not([class*="h-full"]):not([class*="h-screen"]) {
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  width: max-content !important;
+  min-width: max-content !important;
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+div.flex.w-fit:not(#unified-shell-sidebar *) > button,
+div.flex[class*="w-fit"]:not(#unified-shell-sidebar *) > button,
+div.flex.w-fit:not(#unified-shell-sidebar *) > a,
+div.flex[class*="w-fit"]:not(#unified-shell-sidebar *) > a {
+  white-space: nowrap !important;
+  writing-mode: horizontal-tb !important;
+  width: auto !important;
+  min-width: max-content !important;
+  max-width: none !important;
+  height: auto !important;
+  min-height: 32px !important;
+  flex: 0 0 auto !important;
+}
+
+div.sticky.flex.items-center.justify-between,
+div.flex.h-14.items-center.justify-between {
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  height: 56px !important;
+  box-sizing: border-box !important;
+}
+
+div.sticky.flex.items-center.justify-between > div.flex,
+div.flex.h-14.items-center.justify-between > div.flex {
+  flex-direction: row !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: max-content !important;
+  height: auto !important;
+}
+
+div.sticky.flex.items-center.justify-between button,
+div.flex.h-14.items-center.justify-between button {
+  white-space: nowrap !important;
+  writing-mode: horizontal-tb !important;
+  flex: none !important;
+  width: auto !important;
+  min-width: 32px !important;
+}
+
+/* 0.2.89 技能分类条：和已安装那排同一套芯片。挂在插件自己的节点上，不进 React。 */
+#blade-ui-skill-cats {
+  position: fixed;
+  z-index: 30;
+  display: none;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 4px;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+  border-radius: 4px;
+  background: hsl(216 33% 97%);
+  pointer-events: auto;
+}
+
+#blade-ui-skill-cats[data-blade-ui-skill-cats="on"] {
+  display: flex;
+}
+
+#blade-ui-skill-cats button {
+  height: 24px !important;
+  min-height: 24px !important;
+  padding: 0 8px !important;
+  border: 0 !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  color: #646566 !important;
+  font-size: 12px !important;
+  line-height: 20px !important;
+  font-weight: 400 !important;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+
+#blade-ui-skill-cats button[aria-pressed="true"] {
+  background: #e8f3ff !important;
+  color: #237cff !important;
+  font-weight: 600 !important;
+}
+
+html[data-blade-ui-page="skills"] button[data-blade-ui-skill-hide="1"] {
+  display: none !important;
+}
+
+/* 0.2.94 工具、插件、工作流、数据源的 main 是 flex-1 w-full max-w-7xl（80rem）。
+   控制台侧栏右边因此只剩一列。铺满这一列所在的内容区。 */
+html[data-blade-ui-page="tools"] div.flex-1.min-w-0.flex.flex-col,
+html[data-blade-ui-page="plugins"] div.flex-1.min-w-0.flex.flex-col,
+html[data-blade-ui-page="workflows"] div.flex-1.min-w-0.flex.flex-col,
+html[data-blade-ui-page="data-sources"] div.flex-1.min-w-0.flex.flex-col {
+  flex: 1 1 auto !important;
+  align-self: stretch !important;
+  width: auto !important;
+  max-width: none !important;
+  min-width: 0 !important;
+}
+
+html[data-blade-ui-page="tools"] main[class*="max-w-"],
+html[data-blade-ui-page="plugins"] main[class*="max-w-"],
+html[data-blade-ui-page="workflows"] main[class*="max-w-"],
+html[data-blade-ui-page="data-sources"] main[class*="max-w-"] {
+  flex: 1 1 auto !important;
+  align-self: stretch !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+
+

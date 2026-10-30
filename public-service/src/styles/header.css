@@ -1,0 +1,203 @@
+.app-header {
+  height: var(--header-h);
+  flex: none;
+  background: var(--brand);
+  color: var(--text-5);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+  z-index: 30;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  color: var(--text-5);
+}
+
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.16);
+  display: grid;
+  place-items: center;
+}
+
+.brand-name {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.top-nav {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.top-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.top-nav a {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding: 0 16px;
+  color: #fff;
+  font-size: 14px;
+  line-height: 22px;
+  border-bottom: 2px solid transparent;
+}
+
+.top-nav a:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.top-nav a.on {
+  color: #fff;
+  font-weight: 600;
+  border-bottom-color: #fff;
+  background: transparent;
+}
+
+.header-spacer {
+  flex: 1;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.header-link {
+  color: #fff;
+  font-size: 14px;
+  padding: 0 8px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--radius);
+}
+
+.header-link:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.header-icon {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  border-radius: var(--radius);
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.header-icon:hover,
+.user-chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.header-icon .dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 1px solid var(--brand);
+}
+
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px 0 4px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  border-radius: var(--radius);
+}
+
+/* 顶栏不显示当前登录用户。账号仍在，只是不露出头像、名字和账号菜单。 */
+.header-right .menu-anchor:has(> .user-chip) {
+  display: none;
+}
+
+.avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--brand);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.menu {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  min-width: 220px;
+  background: #fff;
+  color: var(--text-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(50, 50, 51, 0.12);
+  padding: 4px;
+  z-index: 40;
+}
+
+.menu-label {
+  padding: 8px 12px 4px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.menu button,
+.menu a {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  color: var(--text-1);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.menu button:hover,
+.menu a:hover {
+  background: var(--bg-soft);
+}
+
+.menu-anchor {
+  position: relative;
+}

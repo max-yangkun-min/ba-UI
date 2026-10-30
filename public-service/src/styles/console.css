@@ -1,0 +1,438 @@
+.console-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.console-body:has(.shell-embed-frame[data-embed-size="grow"]) {
+  flex: none;
+  min-height: calc(100vh - var(--header-h));
+  overflow: visible;
+}
+
+html.is-embedded .console-body:has(.shell-embed-frame[data-embed-size="grow"]) {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.console-side {
+  width: var(--sidebar-w);
+  flex: none;
+  background: #fff;
+  border-right: 1px solid #e8ecf3;
+  overflow: auto;
+  padding: 8px 8px 16px;
+}
+
+.nav-block {
+  margin-bottom: 0;
+}
+
+.nav-item,
+.nav-sub {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: #646566;
+  border-radius: 8px;
+  text-align: left;
+  padding: 0 10px;
+  box-sizing: border-box;
+  font-weight: 400;
+}
+
+.nav-item,
+.nav-sub {
+  height: 40px;
+  margin: 2px 0;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.nav-sub {
+  padding-left: 32px;
+}
+
+.nav-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-item:hover,
+.nav-sub:hover {
+  background: #f5f7fa;
+  color: #323233;
+}
+
+.nav-item.on,
+.nav-sub.on {
+  background: #e8f3ff;
+  color: #237cff;
+  font-weight: 500;
+}
+
+.nav-children {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 0;
+}
+
+.nav-example {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  margin-top: 4px;
+  padding-left: 32px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.nav-example:hover {
+  color: var(--brand);
+  background: transparent;
+}
+
+.console-main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.shell-embed {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-page);
+  border: none;
+  outline: none;
+  box-shadow: none;
+}
+
+.shell-embed:has(.shell-embed-frame[data-embed-size="grow"]) {
+  overflow: visible;
+  flex: none;
+  align-self: stretch;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+}
+
+html.is-embedded .shell-embed:has(.shell-embed-frame[data-embed-size="grow"]) {
+  flex: 1 1 auto;
+  height: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: auto;
+  scrollbar-color: #5c6570 #e6ebf2;
+}
+
+html.is-embedded .shell-embed:has(.shell-embed-frame[data-embed-size="grow"])::-webkit-scrollbar {
+  width: 12px;
+}
+
+html.is-embedded .shell-embed:has(.shell-embed-frame[data-embed-size="grow"])::-webkit-scrollbar-thumb {
+  background: #5c6570;
+  border-radius: 6px;
+}
+
+html.is-embedded .shell-embed:has(.shell-embed-frame[data-embed-size="grow"])::-webkit-scrollbar-track {
+  background: #e6ebf2;
+}
+
+.shell-embed-frame {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  display: block;
+  overflow: hidden;
+  background: var(--bg-page);
+}
+
+.shell-embed-frame[data-embed-size="grow"] {
+  flex: none;
+  align-self: stretch;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+/* 8010 嵌入页自带 48px「返回卡片」条。裁掉后内容区只留 Blade 页面，返回仍在控制台里。 */
+.shell-embed-clip {
+  overflow: hidden;
+  position: relative;
+}
+
+.shell-embed-clip .shell-embed-frame {
+  position: absolute;
+  top: -48px;
+  left: 0;
+  width: 100%;
+  height: calc(100% + 48px);
+}
+
+.console-main:has(.shell-embed) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* grow 只拉高 iframe。主列在横向 flex 里，flex:none 会按 iframe 默认 300px 收缩。 */
+.console-main:has(.shell-embed-frame[data-embed-size="grow"]) {
+  overflow: visible;
+  flex: 1 1 auto;
+  align-self: stretch;
+  width: auto;
+  min-width: 0;
+}
+
+html.is-embedded .console-main:has(.shell-embed-frame[data-embed-size="grow"]) {
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.console-main:has(.ba-embed),
+.console-main:has(.resource-page),
+.console-main:has(.console-manage),
+.console-main:has(.resource-embed),
+.console-main:has(.detail-page) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.console-manage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-page);
+}
+
+.console-manage-bar {
+  flex: none;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.console-manage-bar strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.console-manage .ba-embed {
+  min-height: 0;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.page-head h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 26px;
+}
+
+.page-head p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--text-3);
+}
+
+.page-head .grow {
+  flex: 1;
+}
+
+.page-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.stat-card,
+.panel,
+.module-card,
+.asset-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.stat-card {
+  padding: 16px;
+}
+
+.stat-card .label {
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.stat-card .value {
+  margin-top: 8px;
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.stat-card .hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.panel {
+  padding: 16px;
+}
+
+.panel + .panel {
+  margin-top: 16px;
+}
+
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.module-card {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 148px;
+  color: var(--text-1);
+}
+
+.module-card:hover {
+  border-color: var(--brand);
+}
+
+.module-card .ic {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  background: var(--bg-selected);
+  color: var(--brand);
+  display: grid;
+  place-items: center;
+}
+
+.module-card b {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.module-card span {
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--text-2);
+}
+
+.feed-item {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-row);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.feed-item:last-child {
+  border-bottom: none;
+}
+
+.feed-item time {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.console-columns {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+}
+
+.placeholder {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 24px 16px;
+}
+
+.placeholder h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.placeholder p {
+  margin: 0;
+  color: var(--text-2);
+  max-width: 640px;
+}
+
+@media (max-width: 1100px) {
+  .stat-grid,
+  .module-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .console-columns {
+    grid-template-columns: 1fr;
+  }
+}
