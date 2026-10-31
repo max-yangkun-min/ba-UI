@@ -960,12 +960,12 @@ class EmbedHandler(SimpleHTTPRequestHandler):
             token = ensure_access_token()
         except TokenError as exc:
             log_token(str(exc))
-            self._auth_json(503, {"token": "", "error": str(exc)})
+            self._auth_json(503, {"token": "", "error": str(exc)}, public=True)
             return
         if not token:
-            self._auth_json(503, {"token": "", "error": "未配置 EMBED_TOKEN"})
+            self._auth_json(503, {"token": "", "error": "未配置 EMBED_TOKEN"}, public=True)
             return
-        self._auth_json(200, {"token": token})
+        self._auth_json(200, {"token": token}, public=True)
 
     def _forward(self, host, port, rest, body, token):
         headers = {"Host": "%s:%s" % (host, port)}

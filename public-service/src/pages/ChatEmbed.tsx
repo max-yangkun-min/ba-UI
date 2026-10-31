@@ -1,31 +1,41 @@
 import { useEffect, useRef, useState } from "react";
-import { LAB_USERS, useLabAuth } from "../lib/lab-auth";
+import { EMBED_ORIGIN } from "../data/embed-origin";
 
-const BA_ORIGIN = "http://192.168.171.128:8020";
-const PARENT_ORIGIN = "http://127.0.0.1:5173";
-const CHAT_SRC = `${BA_ORIGIN}/chat?iframe=1&embed_parent=${encodeURIComponent(PARENT_ORIGIN)}`;
-const PLATFORM_AUTH = "http://127.0.0.1:5174/embed-auth";
+/** 开发时对话页连实验室。生产包只用安装时写入的嵌入页地址，不保留实验室地址。 */
+function bladeOrigin(): string {
+  if (import.meta.env.DEV) return "http://192.168.171.128:8020";
+  try {
+    const host = new URL(EMBED_ORIGIN, window.location.href).hostname;
+    return host ? `http://${host}:8020` : "";
+  } catch {
+    return "";
+  }
+}
+
+function platformAuthUrl(): string {
+  if (import.meta.env.DEV) return "http://127.0.0.1:5174/embed-auth";
+  return EMBED_ORIGIN ? `${EMBED_ORIGIN}/embed-auth` : "";
+}
 
 export function ChatEmbed() {
-  const { session, logout } = useLabAuth();
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [embedAuth, setEmbedAuth] = useState<"waiting" | "ok">("waiting");
   const [token, setToken] = useState("");
   const [ticketError, setTicketError] = useState("");
+  const blade = bladeOrigin();
 
   useEffect(() => {
     document.title = "对话 · 智能模型公共服务平台";
   }, []);
 
   useEffect(() => {
-    if (!session) return;
-    if (!(LAB_USERS as readonly string[]).includes(session.username)) return;
-    logout();
-  }, [session, logout]);
-
-  useEffect(() => {
+    const authUrl = platformAuthUrl();
+    if (!authUrl) {
+      setTicketError("没有拿到平台嵌入票，对话页打不开。");
+      return;
+    }
     let cancelled = false;
-    fetch(PLATFORM_AUTH, { cache: "no-store" })
+    fetch(authUrl, { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
       .then((data: { token?: unknown } | null) => {
         if (cancelled) return;
@@ -46,16 +56,16 @@ export function ChatEmbed() {
 
   useEffect(() => {
     const frame = frameRef.current;
-    if (!frame || !token) return;
+    if (!frame || !token || !blade) return;
 
     const send = () => {
       const child = frame.contentWindow;
       if (!child) return;
-      child.postMessage({ type: "blade-embed-token", token }, BA_ORIGIN);
+      child.postMessage({ type: "blade-embed-token", token }, blade);
     };
 
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== BA_ORIGIN) return;
+      if (event.origin !== blade) return;
       if (event.source !== frame.contentWindow) return;
       const data = event.data as { type?: string } | null;
       if (!data) return;
@@ -66,7 +76,7 @@ export function ChatEmbed() {
     window.addEventListener("message", onMessage);
     send();
     return () => window.removeEventListener("message", onMessage);
-  }, [token]);
+  }, [token, blade]);
 
   if (ticketError) {
     return (
@@ -76,11 +86,13 @@ export function ChatEmbed() {
     );
   }
 
-  if (!token) return <div className="shell-embed" />;
+  if (!token || !blade) return <div className="shell-embed" />;
+
+  const src = `${blade}/chat?iframe=1&embed_parent=${encodeURIComponent(window.location.origin)}`;
 
   return (
     <div className="shell-embed" data-embed-auth={embedAuth}>
-      <iframe ref={frameRef} className="shell-embed-frame" title="对话" src={CHAT_SRC} scrolling="no" />
+      <iframe ref={frameRef} className="shell-embed-frame" title="对话" src={src} scrolling="no" />
     </div>
   );
 }

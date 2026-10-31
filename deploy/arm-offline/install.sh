@@ -219,10 +219,14 @@ cp -a "$ROOT/blade-ui-plugin" /opt/blade-ui-plugin
 chmod a+rx /opt/blade-iframe-plugin/*.sh /opt/blade-ui-plugin/*.sh || true
 
 plugin_failed=0
+allow_origin_args=(--allow-origin "http://${IP}:5174")
+if [[ "$WITH_SHELL" -eq 1 ]]; then
+  allow_origin_args+=(--allow-origin "http://${IP}:5173")
+fi
 sh /opt/blade-iframe-plugin/install.sh \
   --ba "$BA_CONTAINER" \
   --bh "$BH_CONTAINER" \
-  --allow-origin "http://${IP}:5174" || plugin_failed=1
+  "${allow_origin_args[@]}" || plugin_failed=1
 if [[ "$plugin_failed" -eq 0 ]]; then
   sh /opt/blade-ui-plugin/install.sh \
     --ba "$BA_CONTAINER" \

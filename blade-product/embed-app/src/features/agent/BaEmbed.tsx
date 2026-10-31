@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { baOrigin } from "../../data/site";
-import { currentPortalSession, whenPortalSession } from "../../lib/portal-session";
 import { AgentWorkbench } from "./AgentWorkbench";
 
 const origin = baOrigin();
@@ -19,29 +18,15 @@ type BaEmbedProps = {
   hideNav?: boolean;
 };
 
-/** 对话只用当前用户的平台票。未登录时不回落到超级管理员票。 */
-function requiresUserTicket(path: string) {
-  const normalized = (path.startsWith("/") ? path : `/${path}`).split("?")[0];
-  return normalized === "/" || normalized === "/chat" || normalized.startsWith("/chat/");
-}
-
 export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", frameOrigin, hideNav }: BaEmbedProps) {
   const targetOrigin = (frameOrigin || origin).replace(/\/$/, "");
-  const requiresUser = requiresUserTicket(path);
-  const initial = currentPortalSession();
-  const initialUser = initial?.mode === "user" ? initial.token : "";
   const [mode, setMode] = useState<EmbedMode>(targetOrigin ? "loading" : "fallback");
-  const [chatTicket, setChatTicket] = useState(requiresUser ? initialUser : "");
-  const [chatKnown, setChatKnown] = useState(!requiresUser || initial !== null);
-  const tokenRef = useRef(initialUser);
+  const tokenRef = useRef("");
   const pendingRef = useRef<Set<Window>>(new Set());
   const frameRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
-    if (!targetOrigin) {
-      if (requiresUser) setChatKnown(true);
-      return;
-    }
+    if (!targetOrigin) return;
     let cancelled = false;
 
     const deliver = (frame: Window, token: string) => {
@@ -72,54 +57,24 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
     };
 
     window.addEventListener("message", onMessage);
-    void whenPortalSession().then((session) => {
-      if (cancelled) return;
-      if (session.mode === "user") {
-        tokenRef.current = session.token;
-        if (requiresUser) {
-          setChatTicket(session.token);
-          setChatKnown(true);
-        }
-        for (const source of pendingRef.current) deliver(source, session.token);
+    fetch("/embed-auth", { cache: "no-store", credentials: "same-origin" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { token?: unknown } | null) => {
+        if (cancelled) return;
+        const token = typeof data?.token === "string" ? data.token.trim() : "";
+        if (!token) return;
+        tokenRef.current = token;
+        for (const source of pendingRef.current) deliver(source, token);
         pendingRef.current.clear();
-        return;
-      }
-      if (requiresUser) {
-        tokenRef.current = "";
-        setChatTicket("");
-        setChatKnown(true);
-        return;
-      }
-      fetch("/embed-auth", { cache: "no-store", credentials: "same-origin" })
-        .then((response) => (response.ok ? response.json() : null))
-        .then((data: { token?: unknown } | null) => {
-          if (cancelled) return;
-          const token = typeof data?.token === "string" ? data.token.trim() : "";
-          if (!token) return;
-          tokenRef.current = token;
-          for (const source of pendingRef.current) deliver(source, token);
-          pendingRef.current.clear();
-        })
-        .catch(() => {});
-    });
+      })
+      .catch(() => {});
 
     return () => {
       cancelled = true;
       pendingRef.current.clear();
       window.removeEventListener("message", onMessage);
     };
-  }, [targetOrigin, variant, requiresUser]);
-
-  if (requiresUser && !chatKnown) {
-    return <div className={variant === "home" ? "ba-embed ba-embed-home" : "ba-embed"} />;
-  }
-  if (requiresUser && !chatTicket) {
-    return (
-      <div className={variant === "home" ? "ba-embed ba-embed-home" : "ba-embed"}>
-        <p>请先在门户登录后再进入对话。</p>
-      </div>
-    );
-  }
+  }, [targetOrigin, variant]);
 
   if (!targetOrigin || (variant === "home" && mode === "fallback")) {
     return <AgentWorkbench />;

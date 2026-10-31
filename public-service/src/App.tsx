@@ -5,14 +5,13 @@ import { ConsoleLayout } from "./layouts/ConsoleLayout";
 import { AppDevPage } from "./pages/AppDevPage";
 import { LabAuthProvider } from "./lib/lab-auth";
 import { ChatEmbed } from "./pages/ChatEmbed";
-import { ChatGate } from "./pages/ChatGate";
 import { ConsoleHome } from "./pages/ConsoleHome";
 import { LoginTestPage } from "./pages/LoginTestPage";
 import { ModulePage } from "./pages/ModulePage";
 import { ShellEmbed } from "./pages/ShellEmbed";
 
-/** 开发时首页仍是实验室对话。生产包首页先登录，不带实验室快捷入口。 */
-const HomeEmbed = import.meta.env.DEV ? ChatEmbed : ChatGate;
+/** 首页向嵌入页要平台票，再打开对话。不展示登录门。 */
+const HomeEmbed = ChatEmbed;
 const LoginTestRoute = import.meta.env.DEV ? <Route path="/login-test" element={<LoginTestPage />} /> : null;
 import "./styles/global.css";
 import "./styles/login-test.css";

@@ -5,10 +5,56 @@
   var scheduled = false;
   var observer = null;
   var sidebarExpandTries = 0;
+  var routeWatchBound = false;
+
+  // 运营中心整页走 Blade 原生界面：/admin 以及 ?tab= 下的总览、趋势、平台能力等。
+  // 停掉主题样式表，颜色、顶栏和布局回到产品自己的样式。对话、技能、知识库和公开壳不走这里。
+  function opsCenterRoute() {
+    var path = window.location.pathname || "";
+    if (path.length > 1 && path.charAt(path.length - 1) === "/") path = path.slice(0, -1);
+    return path === "/admin" || path.indexOf("/admin/") === 0;
+  }
+
+  function syncOpsNative() {
+    var native = opsCenterRoute();
+    var links = document.querySelectorAll('link[rel="stylesheet"]');
+    var i;
+    for (i = 0; i < links.length; i += 1) {
+      var href = links[i].getAttribute("href") || "";
+      if (href.indexOf("blade-ui-theme.css") === -1) continue;
+      if (links[i].disabled !== native) links[i].disabled = native;
+    }
+    var root = document.documentElement;
+    if (root) {
+      if (native) root.setAttribute("data-blade-ui-native", "ops");
+      else if (root.getAttribute("data-blade-ui-native") === "ops") root.removeAttribute("data-blade-ui-native");
+    }
+    return native;
+  }
+
+  function bindRouteWatch() {
+    if (routeWatchBound) return;
+    routeWatchBound = true;
+    window.addEventListener("popstate", schedule);
+    ["pushState", "replaceState"].forEach(function (name) {
+      var orig = history[name];
+      if (typeof orig !== "function") return;
+      history[name] = function () {
+        var result = orig.apply(this, arguments);
+        syncOpsNative();
+        schedule();
+        return result;
+      };
+    });
+  }
+
+  syncOpsNative();
+  bindRouteWatch();
 
   // 嵌入态对话侧栏只保留展开后的固定宽度。写在脚本开头，React 读偏好之前就生效。
   // 不写 expandedSize：应用自己的默认是约 280px 的百分比。写成 280 会被当成百分比，顶到最大宽度。
   function lockChatSidebarPref() {
+    if (opsCenterRoute()) return;
     var embedded = false;
     try {
       embedded = window.parent !== window;
@@ -201,6 +247,11 @@
       if (chatIsLive() && input.closest("#unified-shell-main")) continue;
       var box = input.parentElement;
       if (!box || box === document.body) continue;
+      // 历史对话的改名框自己有一圈边框。字段外壳再加一圈，聚焦时两圈都变蓝，还会被 32px 最小高度顶出行外。
+      if (input.closest('section[class*="group/history"]')) {
+        if (box.getAttribute("data-blade-ui-field")) box.removeAttribute("data-blade-ui-field");
+        continue;
+      }
       if (box.querySelectorAll("input, textarea, select").length !== 1) continue;
       if (box.tagName === "LABEL") continue;
       if (box.querySelector(":scope > span") && box.querySelector("input, textarea")) continue;
@@ -755,6 +806,17 @@
     // paint 里换文本或改 class 会立刻再调度，技能页就一直空转。
     if (observer) observer.disconnect();
     try {
+    if (syncOpsNative()) {
+      var opsRoot = document.documentElement;
+      if (opsRoot) {
+        opsRoot.removeAttribute("data-blade-ui-chat");
+        opsRoot.removeAttribute("data-blade-ui-page");
+        opsRoot.removeAttribute("data-blade-ui-sidebar");
+        opsRoot.removeAttribute("data-blade-ui-factory-home");
+        opsRoot.removeAttribute("data-blade-ui-error");
+      }
+      return;
+    }
     var live = chatIsLive();
     if (live) document.documentElement.setAttribute("data-blade-ui-chat", "live");
     else document.documentElement.removeAttribute("data-blade-ui-chat");
@@ -1902,6 +1964,8 @@
   }
 
   function start() {
+    bindRouteWatch();
+    syncOpsNative();
     schedule();
     if (document.documentElement) {
       observer = new MutationObserver(schedule);

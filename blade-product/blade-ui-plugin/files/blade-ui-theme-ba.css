@@ -238,7 +238,7 @@ html[data-blade-ui-chat="live"] #unified-shell-main button[class*="rounded-lg"] 
   border-radius: 9999px !important;
 }
 
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([aria-label="编辑对话名称"]),
 select {
   min-height: 32px;
   border-radius: 4px !important;
@@ -3041,4 +3041,83 @@ html:has(#blade-embed-chrome-style) :has(#init-script) div.mb-4.flex.items-cente
 
 html:has(#blade-embed-chrome-style) div:has(> #init-script) {
   display: none !important;
+}
+
+/* 0.2.100 历史对话行内改名。
+   [data-blade-ui-field] 会给输入框父级再加边框、4px 圆角，聚焦时改成蓝色；
+   全局 input 的 32px 最小高度又把内框顶出这圈外壳。两圈对不齐。
+   改名只留一圈，收进 32px 的会话行。批量删除的复选框不在这个选择器里。 */
+#unified-shell-sidebar section[class*="group/history"] [data-blade-ui-field="true"]:has(input[aria-label="编辑对话名称"]) {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+#unified-shell-sidebar section[class*="group/history"] [class*="hover-row"]:has(input[aria-label="编辑对话名称"]) {
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  margin: 0 !important;
+  padding: 0 16px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+  gap: 0 !important;
+}
+
+#unified-shell-sidebar section[class*="group/history"] [class*="hover-row"]:has(input[aria-label="编辑对话名称"]) > div {
+  height: auto !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  gap: 0 !important;
+}
+
+#unified-shell-sidebar section[class*="group/history"] input[aria-label="编辑对话名称"] {
+  box-sizing: border-box !important;
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 28px !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 8px !important;
+  border: 1px solid #dcdfe6 !important;
+  border-radius: 4px !important;
+  background: #ffffff !important;
+  outline: none !important;
+  box-shadow: none !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  line-height: 26px !important;
+  color: #323233 !important;
+}
+
+#unified-shell-sidebar section[class*="group/history"] input[aria-label="编辑对话名称"]:focus,
+#unified-shell-sidebar section[class*="group/history"] input[aria-label="编辑对话名称"]:focus-visible {
+  border-color: #237cff !important;
+  outline: none !important;
+  box-shadow: none !important;
 }

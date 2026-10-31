@@ -1,9 +1,8 @@
 import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { EMBED_ORIGIN } from "../data/embed-origin";
-import { useLabAuth } from "../lib/lab-auth";
 
-/** 开发时浏览页和控制台应用开发都走本机嵌入页，好把当前登录票传进去。生产包用 shell-site.js 里的地址。 */
+/** 开发时浏览页和控制台应用开发都走本机嵌入页。嵌入页自己向 /embed-auth 要平台票。生产包用 shell-site.js 里的地址。 */
 const LOCAL_EMBED = import.meta.env.DEV ? "http://127.0.0.1:5174" : EMBED_ORIGIN;
 
 function embedSrc(pathname: string, search: string, hash: string) {
@@ -26,7 +25,7 @@ function embedSrc(pathname: string, search: string, hash: string) {
   return `${EMBED_ORIGIN}${pathname}${search}${hash}`;
 }
 
-/** 只告诉嵌入页父页面是谁。用户票走 postMessage，不放进地址。 */
+/** 只告诉嵌入页父页面是谁。平台票由嵌入页自己向 /embed-auth 领取，不放进地址。 */
 function withPortalParent(url: string) {
   try {
     const parsed = new URL(url, window.location.href);
@@ -49,11 +48,9 @@ function clipsHubBar(src: string) {
 
 export function ShellEmbed() {
   const location = useLocation();
-  const { ready, session } = useLabAuth();
   const src = withPortalParent(embedSrc(location.pathname, location.search, location.hash));
   const clip = clipsHubBar(src);
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const frameKey = session?.username ?? "admin";
 
   useEffect(() => {
     const frame = frameRef.current;
@@ -67,8 +64,7 @@ export function ShellEmbed() {
     const send = () => {
       const child = frame.contentWindow;
       if (!child) return;
-      if (session?.token) child.postMessage({ type: "blade-embed-token", token: session.token }, targetOrigin);
-      else child.postMessage({ type: "blade-embed-token", admin: true }, targetOrigin);
+      child.postMessage({ type: "blade-embed-token", admin: true }, targetOrigin);
     };
     const onMessage = (event: MessageEvent) => {
       if (event.source !== frame.contentWindow) return;
@@ -78,8 +74,9 @@ export function ShellEmbed() {
       send();
     };
     window.addEventListener("message", onMessage);
+    send();
     return () => window.removeEventListener("message", onMessage);
-  }, [src, session]);
+  }, [src]);
 
   useEffect(() => {
     const frame = frameRef.current;
@@ -160,11 +157,9 @@ export function ShellEmbed() {
     };
   }, [src, clip]);
 
-  if (!ready) return <div className={clip ? "shell-embed shell-embed-clip" : "shell-embed"} />;
-
   return (
     <div className={clip ? "shell-embed shell-embed-clip" : "shell-embed"}>
-      <iframe key={frameKey} ref={frameRef} className="shell-embed-frame" title="嵌入页" src={src} scrolling="no" />
+      <iframe ref={frameRef} className="shell-embed-frame" title="嵌入页" src={src} scrolling="no" />
     </div>
   );
 }

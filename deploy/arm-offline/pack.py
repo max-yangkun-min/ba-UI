@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-STAGE = "20261028-blade-arm-offline"
+STAGE = "20261031-blade-arm-offline"
 OUT = ROOT / "deliver" / f"{STAGE}.tar.gz"
 BINARY_EXT = {".ttf", ".woff", ".woff2", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".eot", ".zip"}
 JWT = re.compile(br"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")
@@ -157,7 +157,7 @@ def main() -> None:
             required.append(f"{STAGE}/experts/{expert}/scenario.json")
         ui_ver = tar.extractfile(f"{STAGE}/blade-ui-plugin/VERSION").read().strip()
         iframe_ver = tar.extractfile(f"{STAGE}/blade-iframe-plugin/VERSION").read().strip()
-        if ui_ver != b"0.2.78":
+        if ui_ver != b"0.2.101":
             problems.append("ui version %s" % ui_ver)
         ui_css = tar.extractfile(f"{STAGE}/blade-ui-plugin/files/blade-ui-theme-ba.css").read()
         if b"data-resize-handle" not in ui_css or b"width: 9px" not in ui_css:
@@ -168,7 +168,7 @@ def main() -> None:
         if iframe_ver != b"1.1.26":
             problems.append("iframe version %s" % iframe_ver)
         notes = tar.extractfile(f"{STAGE}/部署说明.md").read().decode("utf-8")
-        for needle in ("20261024-blade-arm-offline", "http://<生产IP>:5173/resources/agents", "http://<生产IP>:5173/console/app-dev/factory", "20261022-skills"):
+        for needle in ("20261031-blade-arm-offline", "http://<生产IP>:5173/resources/agents", "http://<生产IP>:5173/console/app-dev/factory", "20261022-skills"):
             if needle not in notes:
                 problems.append("部署说明 missing " + needle)
         if "import-skills" in notes:
