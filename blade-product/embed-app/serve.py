@@ -49,12 +49,7 @@ FRAME_ANCESTORS = os.environ.get("EMBED_FRAME_ANCESTORS", "*").strip() or "*"
 CSP = "frame-ancestors " + FRAME_ANCESTORS
 
 # 反代只访问本机 Blade。浏览器里的 8020/8010 地址来自 blade-site.js，不使用 127.0.0.1。
-PROXIES = (
-    ("/api-ba", "127.0.0.1", 8020),
-    ("/api-llm", "127.0.0.1", 30000),
-    ("/api-bh", "127.0.0.1", 8010),
-    ("/api-bos", "127.0.0.1", 80),
-)
+# /api-bos 的端口在 read_env 之后写入 PROXIES：BOS_PORT，默认 80。
 
 # blade-auth-client 默认 cookie，与 iframe 插件 autologin.html 一致。
 # POST /api/auth/refresh 只读刷新票，成功时 Set-Cookie 同时下发新的两张票。
@@ -148,6 +143,119 @@ def read_env(path):
             key, value = raw.split("=", 1)
             values[key.strip()] = value.strip().strip('"').strip("'")
     return values
+
+
+def configured_port(name, default):
+    """进程环境优先，其次 proxy.env。空值用 default。非法值退回 default，不中断服务。"""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        try:
+            raw = read_env(token_path()).get(name, "").strip()
+        except (OSError, UnicodeError):
+            raw = ""
+    if not raw:
+        return default
+    port = int(raw) if raw.isdigit() else 0
+    if 1 <= port <= 65535:
+        return port
+    sys.stderr.write("embed-app: %s 不是有效端口，仍使用 %s\n" % (name, default))
+    sys.stderr.flush()
+    return default
+
+
+# 开发空间、管理空间的跳转地址。
+# 现场文件是 /opt/embed-app/space-urls.json（与 proxy.env 同目录）。
+# 进程环境 DEV_SPACE_URL、ADMIN_SPACE_URL 优先，其次 proxy.env 里的同名项，最后才读 JSON。
+# 空字符串表示该标签不跳转。GET /api/space-urls 只返回 {"dev","admin"}，不需要登录。
+SPACE_URLS_PATH = "/api/space-urls"
+SPACE_URL_LIMIT = 2048
+
+
+def space_urls_file():
+    override = os.environ.get("EMBED_SPACE_URLS", "").strip()
+    if override:
+        return override
+    directory = os.path.dirname(os.path.abspath(token_path())) or "."
+    return os.path.join(directory, "space-urls.json")
+
+
+def clean_space_url(value):
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if not text or len(text) > SPACE_URL_LIMIT:
+        return ""
+    for char in text:
+        if char <= " " or char in "<>\"'`":
+            return ""
+    lower = text.lower()
+    if not (lower.startswith("http://") or lower.startswith("https://")):
+        return ""
+    return text
+
+
+def _json_without_comments(raw):
+    lines = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("//"):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _urls_from_mapping(data):
+    if not isinstance(data, dict):
+        return "", ""
+    return clean_space_url(data.get("dev")), clean_space_url(data.get("admin"))
+
+
+def _read_space_file(path):
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            raw = handle.read()
+        parsed = json.loads(_json_without_comments(raw) or "{}")
+    except (OSError, UnicodeError, ValueError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return _urls_from_mapping(parsed)
+
+
+def load_space_urls():
+    """给 /api/space-urls。不读取、不返回访问票。"""
+    path = space_urls_file()
+    if os.path.isfile(path):
+        found = _read_space_file(path)
+        dev, admin = found if found is not None else ("", "")
+    else:
+        example = path + ".example" if not path.endswith(".example") else ""
+        found = _read_space_file(example) if example else None
+        dev, admin = found if found is not None else ("", "")
+    try:
+        values = read_env(token_path())
+    except (OSError, UnicodeError):
+        values = {}
+    if "DEV_SPACE_URL" in values:
+        dev = clean_space_url(values.get("DEV_SPACE_URL", ""))
+    if "ADMIN_SPACE_URL" in values:
+        admin = clean_space_url(values.get("ADMIN_SPACE_URL", ""))
+    if "DEV_SPACE_URL" in os.environ:
+        dev = clean_space_url(os.environ.get("DEV_SPACE_URL", ""))
+    if "ADMIN_SPACE_URL" in os.environ:
+        admin = clean_space_url(os.environ.get("ADMIN_SPACE_URL", ""))
+    return {"dev": dev, "admin": admin}
+
+
+# 应用市场（Blade OS）。实验室和旧安装是 80。现场改到 8099 时在 proxy.env 写 BOS_PORT=8099。
+PROXIES = (
+    ("/api-ba", "127.0.0.1", 8020),
+    ("/api-llm", "127.0.0.1", 30000),
+    ("/api-bh", "127.0.0.1", 8010),
+    ("/api-bos", "127.0.0.1", configured_port("BOS_PORT", 80)),
+)
 
 
 def configured_tokens(path):
@@ -791,6 +899,9 @@ class EmbedHandler(SimpleHTTPRequestHandler):
 
     def _route(self, static):
         path = urlsplit(self.path).path
+        if path == SPACE_URLS_PATH:
+            self._space_urls()
+            return
         if path == CATALOG_COUNTS_PATH:
             self._catalog_counts()
             return
@@ -868,6 +979,21 @@ class EmbedHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+
+    def _space_urls(self):
+        """开发空间、管理空间地址。不校验登录，响应里只有两个 URL。"""
+        if self.command == "OPTIONS":
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Accept")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if self.command not in ("GET", "HEAD"):
+            self.send_error(405)
+            return
+        self._auth_json(200, load_space_urls(), public=True)
 
     def _catalog_counts(self):
         """调用方的 Bearer 优先。没有时才用服务端访问票。"""

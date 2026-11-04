@@ -5,12 +5,14 @@ import { ConsoleLayout } from "./layouts/ConsoleLayout";
 import { AppDevPage } from "./pages/AppDevPage";
 import { LabAuthProvider } from "./lib/lab-auth";
 import { ChatEmbed } from "./pages/ChatEmbed";
+import { ChatAdmin } from "./pages/ChatAdmin";
+import { ChatWorkspace } from "./pages/ChatWorkspace";
 import { ConsoleHome } from "./pages/ConsoleHome";
 import { LoginTestPage } from "./pages/LoginTestPage";
 import { ModulePage } from "./pages/ModulePage";
 import { ShellEmbed } from "./pages/ShellEmbed";
 
-/** 首页向嵌入页要平台票，再打开对话。不展示登录门。 */
+/** 首页是外壳加嵌入页。不展示登录门。 */
 const HomeEmbed = ChatEmbed;
 const LoginTestRoute = import.meta.env.DEV ? <Route path="/login-test" element={<LoginTestPage />} /> : null;
 import "./styles/global.css";
@@ -27,6 +29,8 @@ export function App() {
         <AppHeader />
         <Routes>
           <Route path="/" element={<HomeEmbed />} />
+          <Route path="/chat-workspace" element={<ChatWorkspace />} />
+          <Route path="/chat-admin" element={<ChatAdmin />} />
           <Route path="/resources/prompts" element={<Navigate to="/console/app-dev/prompts" replace />} />
           <Route path="/resources/prompts/*" element={<Navigate to="/console/app-dev/prompts" replace />} />
           <Route path="/resources/*" element={<ShellEmbed />} />

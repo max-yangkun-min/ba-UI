@@ -1,0 +1,9 @@
+# 现场要改的是安装后的 /opt/embed-app/space-urls.json（和 proxy.env 同一目录）。
+# 改完执行 systemctl restart embed-app。
+# 也可以不改本文件，而在 /opt/embed-app/proxy.env 里写 DEV_SPACE_URL 和 ADMIN_SPACE_URL。
+# 进程环境里的同名变量优先，其次 proxy.env，最后才是本文件。
+# 值为空字符串时，对应标签仍显示，点击不离开本页。不要在这里写凭据。
+{
+  "dev": "https://www.baidu.com",
+  "admin": "https://www.jd.com"
+}

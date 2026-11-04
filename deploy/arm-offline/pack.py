@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-STAGE = "20261031-blade-arm-offline"
+STAGE = "20261103-blade-arm-offline"
 OUT = ROOT / "deliver" / f"{STAGE}.tar.gz"
 BINARY_EXT = {".ttf", ".woff", ".woff2", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".eot", ".zip"}
 JWT = re.compile(br"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")
@@ -93,8 +93,31 @@ def main() -> None:
         for name in ("install.sh", "uninstall.sh", "proxy.env.example"):
             add(tar, name, payload(deploy / name), 0o755 if name.endswith(".sh") else 0o644)
         add(tar, "部署说明.md", payload(ROOT / "部署说明.md"), 0o644)
+        add(tar, "大系统嵌入说明.md", payload(ROOT / "大系统嵌入说明.md"), 0o644)
         add(tar, "embed-app/serve.py", payload(ROOT / "blade-product" / "embed-app" / "serve.py"), 0o644)
+        space_example = payload(ROOT / "blade-product" / "embed-app" / "space-urls.json.example")
+        for needle in (
+            b"https://www.baidu.com",
+            b"https://www.jd.com",
+            b"/opt/embed-app/space-urls.json",
+            b"DEV_SPACE_URL",
+            b"ADMIN_SPACE_URL",
+        ):
+            if needle not in space_example:
+                raise SystemExit("space-urls example missing %s" % needle.decode())
+        if b"EMBED_TOKEN" in space_example or b"eyJ" in space_example:
+            raise SystemExit("space-urls example has a secret")
+        add(tar, "embed-app/space-urls.json.example", space_example, 0o644)
         add(tar, "public-service/serve.py", payload(deploy / "serve-static.py"), 0o644)
+        example = ROOT / "public-service" / ".env.example"
+        example_data = payload(example)
+        for line in (
+            b"VITE_DEV_SPACE_URL=https://www.baidu.com",
+            b"VITE_ADMIN_SPACE_URL=https://www.jd.com",
+        ):
+            if line not in example_data:
+                raise SystemExit("public-service/.env.example is missing %s" % line.decode())
+        add(tar, "public-service/.env.example", example_data, 0o644)
         add_tree(tar, ROOT / "blade-product" / "embed-app" / "dist", "embed-app/dist")
         add_tree(tar, ROOT / "public-service" / "dist", "public-service/dist")
         add_plugin(tar, ROOT / "blade-product" / "blade-iframe-plugin", "blade-iframe-plugin")
@@ -115,13 +138,16 @@ def main() -> None:
             f"{STAGE}/install.sh",
             f"{STAGE}/uninstall.sh",
             f"{STAGE}/部署说明.md",
+            f"{STAGE}/大系统嵌入说明.md",
             f"{STAGE}/proxy.env.example",
             f"{STAGE}/embed-app/dist/index.html",
             f"{STAGE}/embed-app/dist/blade-site.js",
             f"{STAGE}/embed-app/serve.py",
+            f"{STAGE}/embed-app/space-urls.json.example",
             f"{STAGE}/public-service/dist/index.html",
             f"{STAGE}/public-service/dist/shell-site.js",
             f"{STAGE}/public-service/serve.py",
+            f"{STAGE}/public-service/.env.example",
             f"{STAGE}/blade-iframe-plugin/install.sh",
             f"{STAGE}/blade-iframe-plugin/files/iframe-auth-bridge.js",
             f"{STAGE}/blade-ui-plugin/install.sh",
@@ -157,7 +183,7 @@ def main() -> None:
             required.append(f"{STAGE}/experts/{expert}/scenario.json")
         ui_ver = tar.extractfile(f"{STAGE}/blade-ui-plugin/VERSION").read().strip()
         iframe_ver = tar.extractfile(f"{STAGE}/blade-iframe-plugin/VERSION").read().strip()
-        if ui_ver != b"0.2.101":
+        if ui_ver != b"0.2.104":
             problems.append("ui version %s" % ui_ver)
         ui_css = tar.extractfile(f"{STAGE}/blade-ui-plugin/files/blade-ui-theme-ba.css").read()
         if b"data-resize-handle" not in ui_css or b"width: 9px" not in ui_css:
@@ -165,10 +191,10 @@ def main() -> None:
         ui_js = tar.extractfile(f"{STAGE}/blade-ui-plugin/files/blade-ui-theme.js").read()
         if b"127.0.0.1" in ui_js or b"agent log" in ui_js:
             problems.append("ui script still has debug logging")
-        if iframe_ver != b"1.1.26":
+        if iframe_ver != b"1.1.28":
             problems.append("iframe version %s" % iframe_ver)
         notes = tar.extractfile(f"{STAGE}/部署说明.md").read().decode("utf-8")
-        for needle in ("20261031-blade-arm-offline", "http://<生产IP>:5173/resources/agents", "http://<生产IP>:5173/console/app-dev/factory", "20261022-skills"):
+        for needle in ("20261103-blade-arm-offline", "http://<生产IP>:5173/resources/agents", "http://<生产IP>:5173/console/app-dev/factory", "20261022-skills"):
             if needle not in notes:
                 problems.append("部署说明 missing " + needle)
         if "import-skills" in notes:

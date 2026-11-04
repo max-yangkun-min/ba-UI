@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var PLUGIN_VERSION = "1.1.26";
+  var PLUGIN_VERSION = "1.1.28";
   var params = new URLSearchParams(window.location.search);
   var embedMode =
     params.get("mode") === "embed" ||
@@ -136,10 +136,79 @@
     }
   }
 
+  // 父页面的「AI对话 / 开发空间 / 管理空间」只盖住左列。侧栏内容下移同样的高度，主列保持贴顶。
+  function spaceTabPadPx() {
+    var raw = parseInt(params.get("space_tabs") || "", 10);
+    if (raw >= 24 && raw <= 200) return raw;
+    return 0;
+  }
+
+  function applySpaceTabPad(px) {
+    var value = Math.round(Number(px));
+    if (!(value >= 24 && value <= 200)) return;
+    var root = document.documentElement;
+    if (!root) return;
+    root.style.setProperty("--blade-space-tab-pad", value + "px");
+    root.setAttribute("data-blade-space-tabs", "1");
+  }
+
+  function installSpaceTabPad() {
+    if (!document.getElementById("blade-space-tab-pad")) {
+      var style = document.createElement("style");
+      style.id = "blade-space-tab-pad";
+      style.setAttribute("data-blade-iframe-plugin", PLUGIN_VERSION);
+      style.textContent =
+        "html[data-blade-space-tabs='1'] body #unified-shell-sidebar:not(:has(#factory-sidebar-projects-heading)){" +
+        "box-sizing:border-box!important;padding-top:var(--blade-space-tab-pad,0px)!important}";
+      (document.head || document.documentElement).appendChild(style);
+    }
+    applySpaceTabPad(spaceTabPadPx());
+  }
+
+  function preserveSpaceTabHref(event) {
+    var pad = spaceTabPadPx();
+    if (!pad || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    var node = event.target;
+    if (!node || !node.closest) return;
+    var anchor = node.closest("a[href]");
+    if (!anchor || anchor.hasAttribute("download")) return;
+    var url = sameOriginHttp(anchor.href);
+    if (!url) return;
+    withEmbedQuery(url);
+    if (!url.searchParams.has("space_tabs")) url.searchParams.set("space_tabs", String(pad));
+    var next = url.pathname + url.search + url.hash;
+    if ((anchor.getAttribute("href") || "") !== next) anchor.setAttribute("href", next);
+  }
+
+  function keepSpaceTabQuery() {
+    var pad = spaceTabPadPx();
+    if (!pad) return;
+    ["pushState", "replaceState"].forEach(function (name) {
+      var orig = history[name];
+      if (typeof orig !== "function") return;
+      history[name] = function (state, title, url) {
+        if (typeof url === "string" && url) {
+          try {
+            var parsed = sameOriginHttp(url);
+            if (parsed) {
+              withEmbedQuery(parsed);
+              if (!parsed.searchParams.has("space_tabs")) parsed.searchParams.set("space_tabs", String(pad));
+              var next = parsed.pathname + parsed.search + parsed.hash;
+              if (next !== url) return orig.call(history, state, title, next);
+            }
+          } catch (_) {}
+        }
+        return orig.apply(history, arguments);
+      };
+    });
+  }
+
   installEmbedChrome();
+  installSpaceTabPad();
   hideOpsCenter();
 
-  var EMBED_QUERY_KEYS = ["iframe", "embed", "mode", "embed_parent", "parent", "hide_nav", "embed_service", "service"];
+  var EMBED_QUERY_KEYS = ["iframe", "embed", "mode", "embed_parent", "parent", "hide_nav", "embed_service", "service", "space_tabs"];
 
   function sameOriginHttp(href) {
     try {
@@ -174,8 +243,13 @@
     window.location.assign(url.toString());
   }
 
+  keepSpaceTabQuery();
+
   // 软件工厂默认新开标签（target=_blank）。那样会离开已登录的 iframe，新页面没有令牌，随即跳到统一身份认证。
   document.addEventListener("click", function (event) {
+    try {
+      preserveSpaceTabHref(event);
+    } catch (_) {}
     if (event.defaultPrevented || event.button !== 0) return;
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     var node = event.target;
@@ -576,6 +650,10 @@
     if (!originAllowed(event.origin) && parentOrigin) return;
     if (originAllow && !originAllow[event.origin]) return;
     var data = event.data || {};
+    if (data.type === "blade-embed-sidebar-pad") {
+      applySpaceTabPad(data.px);
+      return;
+    }
     if (data.type !== "blade-embed-token" || typeof data.token !== "string") return;
     var value = data.token.trim().replace(/^Bearer\s+/i, "");
     if (value.charAt(0) === '"' && value.charAt(value.length - 1) === '"') {

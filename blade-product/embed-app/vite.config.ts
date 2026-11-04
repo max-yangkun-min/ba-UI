@@ -1,5 +1,10 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv, type ProxyOptions } from "vite";
 import react from "@vitejs/plugin-react";
+
+const embedDir = dirname(fileURLToPath(import.meta.url));
 
 const BLADE_AGENT = "http://192.168.171.128:8020";
 const BLADE_HUB = "http://192.168.171.128:8010";
@@ -476,6 +481,98 @@ async function handleBatchDelete(req: BatchReq, res: BatchRes) {
   sendBatchJson(res, 200, { deleted, failed });
 }
 
+function cleanSpaceUrl(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const text = value.trim();
+  if (!text || text.length > 2048) return "";
+  if (/[\u0000-\u0020<>"'`]/.test(text)) return "";
+  const lower = text.toLowerCase();
+  if (!lower.startsWith("http://") && !lower.startsWith("https://")) return "";
+  return text;
+}
+
+function readSpaceFile(path: string): { dev: string; admin: string } | null {
+  if (!existsSync(path)) return null;
+  let raw = "";
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+  const body = raw
+    .split(/\r?\n/)
+    .filter((line) => {
+      const trimmed = line.trim();
+      return trimmed.length > 0 && !trimmed.startsWith("#") && !trimmed.startsWith("//");
+    })
+    .join("\n");
+  try {
+    const data = JSON.parse(body) as unknown;
+    if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+    const record = data as Record<string, unknown>;
+    return { dev: cleanSpaceUrl(record.dev), admin: cleanSpaceUrl(record.admin) };
+  } catch {
+    return null;
+  }
+}
+
+/** 每次请求重读 JSON。进程环境里的 DEV_SPACE_URL、ADMIN_SPACE_URL 优先。 */
+function currentSpaceUrls(): { dev: string; admin: string } {
+  const primary = join(embedDir, "space-urls.json");
+  const example = join(embedDir, "space-urls.json.example");
+  const fromFile = readSpaceFile(primary) ?? readSpaceFile(example) ?? { dev: "", admin: "" };
+  const dev = Object.prototype.hasOwnProperty.call(process.env, "DEV_SPACE_URL")
+    ? cleanSpaceUrl(process.env.DEV_SPACE_URL)
+    : fromFile.dev;
+  const admin = Object.prototype.hasOwnProperty.call(process.env, "ADMIN_SPACE_URL")
+    ? cleanSpaceUrl(process.env.ADMIN_SPACE_URL)
+    : fromFile.admin;
+  return { dev, admin };
+}
+
+function isSpaceUrlsRequest(url: string | undefined): boolean {
+  const path = (url ?? "").split("?")[0];
+  return path === "/" || path === "" || path === "/api/space-urls";
+}
+
+/** 开发服务每次请求读取示例地址。不把地址打进前端包。 */
+function spaceUrlsDev() {
+  return {
+    name: "space-urls-dev",
+    configureServer(server: { middlewares: { use: Function } }) {
+      server.middlewares.use("/api/space-urls", (req: { method?: string; url?: string }, res: {
+        statusCode: number;
+        setHeader: (name: string, value: string) => void;
+        end: (body?: string) => void;
+      }, next: () => void) => {
+        if (!isSpaceUrlsRequest(req.url)) {
+          next();
+          return;
+        }
+        if (req.method === "OPTIONS") {
+          res.statusCode = 204;
+          res.setHeader("Access-Control-Allow-Origin", "*");
+          res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+          res.setHeader("Access-Control-Allow-Headers", "Accept");
+          res.end();
+          return;
+        }
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          next();
+          return;
+        }
+        const body = JSON.stringify(currentSpaceUrls());
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.end(req.method === "HEAD" ? undefined : body);
+      });
+    },
+  };
+}
+
 /** 开发服务同源下发令牌。值只留在 Node 进程里，不打进前端包。 */
 function embedAuthDev(token: string) {
   return {
@@ -511,6 +608,7 @@ export default defineConfig(({ mode }) => {
       catalogCountsDev(token),
       batchDeleteDev(),
       bladeSiteDev(env.VITE_BA_ORIGIN ?? ""),
+      spaceUrlsDev(),
     ],
     server: {
       host: "127.0.0.1",

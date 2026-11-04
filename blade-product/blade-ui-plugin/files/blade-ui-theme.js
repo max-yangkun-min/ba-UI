@@ -6,6 +6,7 @@
   var observer = null;
   var sidebarExpandTries = 0;
   var routeWatchBound = false;
+  var embedShellPosted = false;
 
   // 运营中心整页走 Blade 原生界面：/admin 以及 ?tab= 下的总览、趋势、平台能力等。
   // 停掉主题样式表，颜色、顶栏和布局回到产品自己的样式。对话、技能、知识库和公开壳不走这里。
@@ -342,7 +343,7 @@
     }
   }
 
-  // 0.2.85 嵌入态侧栏宽度：展开时钉在 280px，收起成图标栏时让应用自己的宽度生效。
+  // 嵌入态侧栏宽度由样式钉在原型的 240px。收起成图标栏时让应用自己的宽度生效。
   // 侧栏是 react-resizable-panels 的面板，内联 flex-grow 就是它占容器的百分比。
   // 插件 CSS 覆盖的是计算值，内联值照样由应用写，所以能拿它判断收起没收起。
   function markSidebarMode() {
@@ -353,7 +354,7 @@
       root.removeAttribute("data-blade-ui-sidebar");
       return;
     }
-    // 收起态会换成 group/rail 那一栏。用它判断，避免 flex-grow 读不到时仍被钉成 280px。
+    // 收起态会换成 group/rail 那一栏。用它判断，避免 flex-grow 读不到时仍被钉成展开宽度。
     // 软件工厂的侧栏也带 group/rail，不能算成对话图标栏。
     var railAside = aside.querySelector('aside[class*="group/rail"]');
     if (railAside && !railAside.querySelector("#factory-sidebar-projects-heading")) {
@@ -851,10 +852,12 @@
     hideEmbedLogout();
     hideEmbedThemeToggle();
     hideEmbedHomeExtras();
+    hideEmbedConnectorExtras();
     markFactoryHome();
     markFactorySidebar();
     markConsolePage();
     syncSkillCategories();
+    notifyEmbedShell();
     document.documentElement.removeAttribute("data-blade-ui-error");
     } catch (err) {
       document.documentElement.setAttribute("data-blade-ui-error", String(err && err.message || err).slice(0, 200));
@@ -890,6 +893,53 @@
     } catch (error) {
       return true;
     }
+  }
+
+  // 嵌入对话侧栏里的「新建对话」已经排好版时，通知父页面露出标签。只发一次，不改 React 节点。
+  function shellParentOrigin() {
+    try {
+      var params = new URLSearchParams(window.location.search || "");
+      var hinted = params.get("embed_parent") || params.get("parent") || "";
+      if (!hinted) return "*";
+      var origin = new URL(hinted, window.location.href).origin;
+      if (origin && origin !== "null") return origin;
+    } catch (err) {}
+    return "*";
+  }
+
+  function embedNewChatVisible() {
+    if (!inEmbedFrame()) return false;
+    var sidebar = document.getElementById("unified-shell-sidebar");
+    if (!sidebar) return false;
+    var side = sidebar.getBoundingClientRect();
+    if (side.width < 8 || side.height < 8) return false;
+    var clicks = sidebar.querySelectorAll("button, a, [role='button']");
+    for (var i = 0; i < clicks.length; i += 1) {
+      var el = clicks[i];
+      if (el.querySelector("button, a")) continue;
+      var text = (el.innerText || "").replace(/\s+/g, "");
+      if (text.indexOf("新建对话") === -1 || text.length > 20) continue;
+      var rect = el.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) continue;
+      return true;
+    }
+    return false;
+  }
+
+  function notifyEmbedShell() {
+    if (embedShellPosted) return;
+    var parentWin = null;
+    try {
+      parentWin = window.parent;
+    } catch (err) {
+      parentWin = null;
+    }
+    if (!parentWin || parentWin === window) return;
+    if (!embedNewChatVisible()) return;
+    try {
+      parentWin.postMessage({ type: "blade-embed-shell", ready: true }, shellParentOrigin());
+      embedShellPosted = true;
+    } catch (err) {}
   }
 
   // 不再把搜索按钮挪进 React 管理的会话区，也不改写标题文本。
@@ -1631,6 +1681,60 @@
         if (marked[i] === keep[k]) still = true;
       }
       if (!still) marked[i].removeAttribute("data-blade-ui-hide");
+    }
+  }
+
+  // 嵌入态连接器弹层：只留「插件」。电脑、外部账号和分隔线打标记。
+  // 身份是弹层里的「搜索连接器」输入框，不按页面上其它「插件」文字藏。
+  function connectorSectionName(node) {
+    if (!node || node.nodeType !== 1) return "";
+    if (node.querySelector("button, input, a, label, [role='button']")) return "";
+    var text = compactLabel(node);
+    if (text === "电脑" || text === "插件" || text === "外部账号") return text;
+    return "";
+  }
+
+  function connectorSeparator(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (compactLabel(node) !== "") return false;
+    return String(node.className || "").indexOf("border-t") !== -1;
+  }
+
+  function hideEmbedConnectorExtras() {
+    var marked = document.querySelectorAll("[data-blade-ui-hide='connector-extra']");
+    var embed = document.getElementById("blade-embed-chrome-style");
+    var keep = [];
+    var inputs = embed ? document.querySelectorAll('input[aria-label="搜索连接器"]') : [];
+    var i;
+    var c;
+    for (i = 0; i < inputs.length; i += 1) {
+      var search = inputs[i].parentElement;
+      var menu = search && search.parentElement;
+      if (!menu || !menu.closest("[data-radix-popper-content-wrapper]")) continue;
+      var hasPlugin = false;
+      for (c = 0; c < menu.children.length; c += 1) {
+        if (connectorSectionName(menu.children[c]) === "插件") hasPlugin = true;
+      }
+      if (!hasPlugin) continue;
+      var section = "";
+      for (c = 0; c < menu.children.length; c += 1) {
+        var child = menu.children[c];
+        if (search && (child === search || search.contains(child) || child.contains(inputs[i]))) continue;
+        var heading = connectorSectionName(child);
+        if (heading) section = heading;
+        if (section === "插件" && !connectorSeparator(child)) continue;
+        child.setAttribute("data-blade-ui-hide", "connector-extra");
+        keep.push(child);
+      }
+    }
+    for (i = 0; i < marked.length; i += 1) {
+      var still = false;
+      for (c = 0; c < keep.length; c += 1) {
+        if (marked[i] === keep[c]) still = true;
+      }
+      if (!still && marked[i].getAttribute("data-blade-ui-hide") === "connector-extra") {
+        marked[i].removeAttribute("data-blade-ui-hide");
+      }
     }
   }
 

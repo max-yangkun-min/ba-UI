@@ -1,0 +1,210 @@
+/* 三标签管理页。只作用于 /chat-admin。 */
+.shell-embed.chat-admin {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  background: #f5f7fa;
+}
+
+.shell-embed.chat-admin::before {
+  content: "";
+  grid-column: 1;
+  grid-row: 1 / -1;
+  background: #fff;
+  border-right: 1px solid #e8ecf3;
+  pointer-events: none;
+}
+
+.chat-admin-head {
+  grid-column: 1;
+  grid-row: 1;
+  position: relative;
+  z-index: 3;
+  display: flow-root;
+  padding: 17px 12px 0;
+  background: #fff;
+  border-right: 1px solid #e8ecf3;
+}
+
+.chat-admin-head[data-pending="1"] {
+  visibility: hidden;
+}
+
+.shell-embed.chat-admin > :not(.chat-admin-head) {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-height: 0;
+}
+
+.shell-embed.chat-admin > .shell-embed-frame {
+  position: relative;
+  z-index: 1;
+  margin-top: -1px;
+  height: calc(100% + 1px);
+  background: transparent;
+}
+
+.shell-embed.chat-admin > .login-test-error {
+  grid-column: 2;
+  z-index: 1;
+}
+
+.shell-embed.chat-admin > .chat-admin-menu {
+  grid-column: 1;
+  grid-row: 2;
+  z-index: 2;
+  position: relative;
+  margin-top: -1px;
+}
+
+.chat-admin-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px;
+  margin: 0;
+  padding: 4px;
+  background: #eaf0f9;
+  border: 1px solid #e2eaf6;
+  border-radius: 11px;
+}
+
+.chat-admin-tabs button,
+.chat-admin-tabs a {
+  display: block;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  padding: 9px 0;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: #8293ae;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chat-admin-tabs button[aria-selected="true"] {
+  background: #fff;
+  color: #397bdd;
+  box-shadow: 0 2px 7px #38639813;
+}
+
+.chat-admin-tabs button:focus-visible,
+.chat-admin-tabs a:focus-visible {
+  outline: 2px solid #7aa6ed;
+  outline-offset: 1px;
+}
+
+.chat-admin-menu {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #fff;
+  border-right: 1px solid #e8ecf3;
+  overflow: hidden;
+}
+
+.chat-admin-menu-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 10px 8px;
+}
+
+.chat-admin-group {
+  margin: 3px 0;
+}
+
+.chat-admin-group summary,
+.chat-admin-link {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 44px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 23px;
+  color: #607592;
+  cursor: pointer;
+  text-decoration: none;
+  list-style: none;
+}
+
+.chat-admin-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-admin-group summary:hover,
+.chat-admin-link:hover {
+  color: #347ddd;
+  background: #eef5ff;
+}
+
+.chat-admin-chevron {
+  margin-left: auto;
+  font-size: 19px;
+  line-height: 20px;
+  color: #a0aec1;
+}
+
+.chat-admin-group[open] > summary {
+  color: #397bdd;
+  background: #eef5ff;
+}
+
+.chat-admin-group[open] > summary .chat-admin-chevron {
+  transform: rotate(90deg);
+}
+
+.chat-admin-children {
+  margin: 4px 0 8px 20px;
+  padding-left: 10px;
+  border-left: 1px solid #e5edf8;
+}
+
+.chat-admin-children .chat-admin-link,
+.chat-admin-children summary {
+  font-size: 14px;
+  line-height: 22px;
+  min-height: 37px;
+  padding: 7px 10px;
+}
+
+.chat-admin-help {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 14px 7px;
+  min-height: 31px;
+  padding: 5px 8px;
+  border-top: 1px solid #e8eef7;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 20px;
+  color: #7187a7;
+  text-decoration: none;
+}
+
+.chat-admin-help-arrow {
+  margin-left: auto;
+  color: #a0aec3;
+  font-size: 12px;
+}
+
+.chat-admin-help:hover {
+  background: #edf4ff;
+  color: #397bce;
+}
+
+@media (max-width: 760px) {
+  .chat-admin-tabs button,
+  .chat-admin-tabs a {
+    font-size: 12px;
+  }
+}

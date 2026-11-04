@@ -1,10 +1,6 @@
-import { useEffect } from "react";
-import { BaEmbed } from "../features/agent/BaEmbed";
+import { EmbedChatSpace } from "./EmbedChatSpace";
 
+/** 普通对话。侧栏顶上只有一个「AI对话」，下面仍是原来的 Blade 对话。 */
 export function HomePage() {
-  useEffect(() => {
-    document.title = "对话 · 智能模型公共服务平台";
-  }, []);
-
-  return <BaEmbed />;
+  return <EmbedChatSpace mode="chat" />;
 }

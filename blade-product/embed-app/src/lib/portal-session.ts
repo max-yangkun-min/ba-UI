@@ -147,7 +147,7 @@ function armHandshake() {
 
 const INSTALLED = "__bladePortalSession";
 
-/** 在渲染页面前完成。嵌在门户里时先问父页面要票；单独打开则维持超级管理员视角。 */
+/** 嵌在门户里时向父页面要票，单独打开则是超级管理员。页面马上画，不等这张票；走代理的接口会等到票确定后再发出。 */
 export function installPortalSession(): Promise<PortalSession> {
   const holder = window as Window & { [INSTALLED]?: Promise<PortalSession> };
   if (!holder[INSTALLED]) {
@@ -162,7 +162,7 @@ export function whenPortalSession(): Promise<PortalSession> {
   return ready;
 }
 
-/** 页面开始渲染时会话通常已经确定。没有确定时返回 null。 */
+/** 票还没到时返回 null。 */
 export function currentPortalSession(): PortalSession | null {
   return settled;
 }

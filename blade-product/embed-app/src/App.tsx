@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "./components/Toast";
 import { AppDevEmbedPage } from "./pages/AppDevEmbedPage";
+import { EmbedChatSpace } from "./pages/EmbedChatSpace";
 import { MockAgentCatalog } from "./pages/MockAgentCatalog";
 import { HomePage } from "./pages/HomePage";
 import { PromptEngineeringPage } from "./pages/PromptEngineeringPage";
@@ -23,6 +24,8 @@ export function App() {
       <div className="embed-app">
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/chat-workspace" element={<EmbedChatSpace mode="workspace" />} />
+          <Route path="/chat-admin" element={<EmbedChatSpace mode="admin" />} />
           <Route path="/resources/skills" element={<ResourceCatalogPage kind="skills" />} />
           <Route path="/resources/knowledge" element={<ResourceCatalogPage kind="knowledge" />} />
           <Route path="/resources/agents" element={<MockAgentCatalog />} />

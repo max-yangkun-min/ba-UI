@@ -123,6 +123,87 @@ html.is-embedded .console-body:has(.shell-embed-frame[data-embed-size="grow"]) {
   box-shadow: none;
 }
 
+/* 单个「AI对话」胶囊。原型只露出这一项时，外框是 .space-tabs，内层是选中按钮。 */
+.shell-embed.chat-embed {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  background: #f5f7fa;
+}
+
+/* 左侧整列先占住 240px。标签在列顶，下面留给 Blade 侧栏，加载前也不会只剩一块胶囊。 */
+.shell-embed.chat-embed::before {
+  content: "";
+  grid-column: 1;
+  grid-row: 1 / -1;
+  background: #fff;
+  border-right: 1px solid #e8ecf3;
+  pointer-events: none;
+}
+
+.chat-side-head {
+  grid-column: 1;
+  grid-row: 1;
+  position: relative;
+  z-index: 1;
+  display: flow-root;
+  background: #fff;
+  border-right: 1px solid #e8ecf3;
+}
+
+.chat-side-head[data-pending="1"] {
+  visibility: hidden;
+}
+
+.shell-embed.chat-embed > :not(.chat-side-head) {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-height: 0;
+}
+
+.shell-embed.chat-embed > .shell-embed-frame {
+  position: relative;
+  z-index: 1;
+  margin-top: -1px;
+  height: calc(100% + 1px);
+  background: transparent;
+}
+
+.shell-embed.chat-embed > .login-test-error {
+  grid-column: 2;
+  z-index: 1;
+}
+
+.chat-embed .ai-chat-pill {
+  margin: 17px 12px 0;
+  padding: 4px;
+  background: #eaf0f9;
+  border: 1px solid #e2eaf6;
+  border-radius: 11px;
+}
+
+.chat-embed .ai-chat-pill span {
+  display: block;
+  border-radius: 8px;
+  padding: 9px 0;
+  background: #fff;
+  color: #397bdd;
+  box-shadow: 0 2px 7px #38639813;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-align: center;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .chat-embed .ai-chat-pill span {
+    font-size: 12px;
+  }
+}
+
 .shell-embed:has(.shell-embed-frame[data-embed-size="grow"]) {
   overflow: visible;
   flex: none;

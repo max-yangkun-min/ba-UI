@@ -35,6 +35,12 @@ export function AppHeader() {
         <NavLink to="/" end className={({ isActive }) => (isActive ? "on" : undefined)}>
           对话
         </NavLink>
+        <NavLink to="/chat-workspace" className={({ isActive }) => (isActive ? "on" : undefined)}>
+          开发
+        </NavLink>
+        <NavLink to="/chat-admin" className={({ isActive }) => (isActive ? "on" : undefined)}>
+          管理
+        </NavLink>
         {resourceNav.map((item) => (
           <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "on" : undefined)}>
             {item.label}

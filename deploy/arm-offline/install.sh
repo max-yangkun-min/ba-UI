@@ -115,6 +115,7 @@ require_file "$ROOT/embed-app/dist/index.html"
 require_file "$ROOT/embed-app/dist/blade-site.js"
 require_file "$ROOT/embed-app/serve.py"
 require_file "$ROOT/proxy.env.example"
+require_file "$ROOT/embed-app/space-urls.json.example"
 require_file "$ROOT/blade-iframe-plugin/install.sh"
 require_file "$ROOT/blade-ui-plugin/install.sh"
 if [[ "$WITH_SHELL" -eq 1 ]]; then
@@ -155,9 +156,16 @@ mkdir -p /opt/embed-app
 cp -a "$ROOT/embed-app/dist" "$EMBED_DIST"
 cp -a "$ROOT/embed-app/serve.py" /opt/embed-app/serve.py
 cp -a "$ROOT/proxy.env.example" /opt/embed-app/proxy.env.example
+cp -a "$ROOT/embed-app/space-urls.json.example" /opt/embed-app/space-urls.json.example
+if [[ ! -f /opt/embed-app/space-urls.json ]]; then
+  cp -a "$ROOT/embed-app/space-urls.json.example" /opt/embed-app/space-urls.json
+fi
 printf 'window.__BLADE_PUBLIC_HOST__ = "%s";\n' "$IP" > "$EMBED_DIST/blade-site.js"
 chmod 755 /opt/embed-app "$EMBED_DIST"
-chmod 644 "$EMBED_DIST/blade-site.js" /opt/embed-app/serve.py /opt/embed-app/proxy.env.example
+chmod 644 "$EMBED_DIST/blade-site.js" /opt/embed-app/serve.py /opt/embed-app/proxy.env.example /opt/embed-app/space-urls.json.example
+if [[ -f /opt/embed-app/space-urls.json ]]; then
+  chmod 644 /opt/embed-app/space-urls.json
+fi
 if ! grep -F -q -- "$IP" "$EMBED_DIST/blade-site.js"; then
   echo "blade-site.js 已写入 $EMBED_DIST/blade-site.js，但正文没有生产 IP。" >&2
   exit 1
@@ -168,6 +176,8 @@ Environment=EMBED_ROOT=${EMBED_DIST}
 Environment=EMBED_PORT=5174
 Environment=EMBED_PROXY_ENV=/opt/embed-app/proxy.env
 Environment=EMBED_FRAME_ANCESTORS=*
+# 应用市场端口在 /opt/embed-app/proxy.env 的 BOS_PORT。留空为 80。现场写 BOS_PORT=8099 后重启本服务。
+# 开发空间、管理空间地址在 /opt/embed-app/space-urls.json，或 proxy.env 的 DEV_SPACE_URL、ADMIN_SPACE_URL。
 ExecStart=${PY} -u /opt/embed-app/serve.py
 EOF
 )"

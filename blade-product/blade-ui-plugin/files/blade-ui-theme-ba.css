@@ -2657,9 +2657,10 @@ html:has(#blade-embed-chrome-style) [data-blade-ui-brand="true"] {
   display: none !important;
 }
 
-/* 嵌入态对话输入框：只藏连接器。加号、发送和场景芯片保留。
-   工厂输入框、弹层和菜单里的同名按钮不在这条规则里。 */
-html:has(#blade-embed-chrome-style) .home-input-card button[aria-label="连接器"]:not(.factory-home-section *):not([role="dialog"] *):not([role="menu"] *):not([data-radix-popper-content-wrapper] *) {
+/* 0.2.104 嵌入态连接器按钮重新显示。弹层里只留「插件」这一段，
+   电脑、外部账号（代码仓库、办公应用）和它们之间的分隔线藏掉。
+   标记只打在「搜索连接器」所在的那个弹层里，插件顶栏和插件页不走这条。 */
+html:has(#blade-embed-chrome-style) [data-radix-popper-content-wrapper] [data-blade-ui-hide="connector-extra"] {
   display: none !important;
 }
 
@@ -2895,15 +2896,14 @@ html[data-blade-ui-page="skills"] button[data-blade-ui-skill-hide="1"] {
   display: none !important;
 }
 
-/* 0.2.91 对话侧栏只保留第三张图那种展开宽度。
-   第三张图侧栏白底右缘 418 设备像素，门户顶栏 48px 在相邻截图里是 72px，比例 1.5，418/1.5 = 279，就是应用自己的 280px。
-   第一张是 68px 图标栏，第二张约 420px（拖到最大或把 280 存成百分比）。这两档都不要。
+/* 嵌入对话侧栏跟原型 --sidebar-w 一样，固定 240px。
+   不要 68px 图标栏，也不要拖拽出来的更宽一档。
    规则放在层外，避免被 w-fit 的 max-content 盖掉。软件工厂侧栏不套。 */
 html:has(#blade-embed-chrome-style) #unified-shell-sidebar:not(:has(#factory-sidebar-projects-heading)) {
-  flex: 0 0 280px !important;
-  width: 280px !important;
-  min-width: 280px !important;
-  max-width: 280px !important;
+  flex: 0 0 240px !important;
+  width: 240px !important;
+  min-width: 240px !important;
+  max-width: 240px !important;
 }
 
 html:has(#blade-embed-chrome-style) #unified-shell-sidebar:not(:has(#factory-sidebar-projects-heading)) button[aria-label="收起侧边栏"],
@@ -2942,7 +2942,7 @@ html:has(#blade-embed-chrome-style) #unified-shell-sidebar:not(:has(#factory-sid
 }
 
 /* 0.2.94 知识库主列是 main 下面的 max-w-5xl（64rem，扣掉左右内边距后卡片大约 960px）。
-   控制台侧栏右边还有大片空白。只放开这一列，对话侧栏的 280px 不动。 */
+   控制台侧栏右边还有大片空白。只放开这一列，对话侧栏的 240px 不动。 */
 html[data-blade-ui-page="knowledge"] #unified-shell-main {
   flex: 1 1 auto !important;
   width: auto !important;

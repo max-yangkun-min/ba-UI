@@ -1,0 +1,101 @@
+/* 双标签对话页。只作用于 /chat-workspace，不改单胶囊对话页。 */
+.shell-embed.chat-workspace {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  background: #f5f7fa;
+}
+
+/* 左侧整列先占住 240px，白底和右边框贯通到页面底部。标签只是这一列的顶栏。 */
+.shell-embed.chat-workspace::before {
+  content: "";
+  grid-column: 1;
+  grid-row: 1 / -1;
+  background: #fff;
+  border-right: 1px solid #e8ecf3;
+  pointer-events: none;
+}
+
+.chat-workspace-head {
+  grid-column: 1;
+  grid-row: 1;
+  position: relative;
+  z-index: 1;
+  display: flow-root;
+  padding: 17px 12px 0;
+  background: #fff;
+  border-right: 1px solid #e8ecf3;
+}
+
+.chat-workspace-head[data-pending="1"] {
+  visibility: hidden;
+}
+
+.shell-embed.chat-workspace > :not(.chat-workspace-head) {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-height: 0;
+}
+
+.shell-embed.chat-workspace > .shell-embed-frame {
+  position: relative;
+  z-index: 1;
+  margin-top: -1px;
+  height: calc(100% + 1px);
+  background: transparent;
+}
+
+.shell-embed.chat-workspace > .login-test-error {
+  grid-column: 2;
+  z-index: 1;
+}
+
+.chat-workspace-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  margin: 0;
+  padding: 4px;
+  background: #eaf0f9;
+  border: 1px solid #e2eaf6;
+  border-radius: 11px;
+}
+
+.chat-workspace-tabs button,
+.chat-workspace-tabs a {
+  display: block;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  padding: 9px 0;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: #8293ae;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chat-workspace-tabs button[aria-selected="true"] {
+  background: #fff;
+  color: #397bdd;
+  box-shadow: 0 2px 7px #38639813;
+}
+
+.chat-workspace-tabs button:focus-visible,
+.chat-workspace-tabs a:focus-visible {
+  outline: 2px solid #7aa6ed;
+  outline-offset: 1px;
+}
+
+@media (max-width: 760px) {
+  .chat-workspace-tabs button,
+  .chat-workspace-tabs a {
+    font-size: 12px;
+  }
+}
