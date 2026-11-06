@@ -1,9 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { embedAppPage } from "../data/embed-origin";
+import { useEmbedGrant } from "../lib/embed-grant";
+import { useLabAuth } from "../lib/lab-auth";
 
 /** 外壳只留顶栏。页签在嵌入页里，这里不再画第二套「AI对话」。 */
 export function ChatEmbed() {
   const src = embedAppPage("/");
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const { session } = useLabAuth();
+  useEmbedGrant(frameRef, src, "/");
 
   useEffect(() => {
     document.title = "对话 · 智能模型公共服务平台";
@@ -19,7 +24,7 @@ export function ChatEmbed() {
 
   return (
     <div className="shell-embed">
-      <iframe className="shell-embed-frame" title="对话" src={src} scrolling="no" />
+      <iframe key={session?.token || "admin"} ref={frameRef} className="shell-embed-frame" title="对话" src={src} scrolling="no" />
     </div>
   );
 }

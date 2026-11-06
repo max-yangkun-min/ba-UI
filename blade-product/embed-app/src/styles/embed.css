@@ -1,3 +1,17 @@
+.auth-hold,
+.ba-embed-hold {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--text-2);
+  background: var(--bg-page);
+  text-align: center;
+}
+
 .embed-app {
   height: 100vh;
   min-height: 0;

@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { baOrigin } from "../../data/site";
+import { currentPortalSession, whenPortalSession } from "../../lib/portal-session";
 import { AgentWorkbench } from "./AgentWorkbench";
 
 const origin = baOrigin();
 
 /** 和 embed-space.css 的 --space-tab-band 同一高度。只下移 Blade 侧栏，主列仍贴顶。 */
 const SPACE_TAB_BAND = 65;
+
+function readEmbedAuth() {
+  return fetch("/embed-auth", { cache: "no-store", credentials: "same-origin" })
+    .then((response) => (response.ok ? response.json() : null))
+    .then((data: { token?: unknown } | null) => (typeof data?.token === "string" ? data.token.trim() : ""))
+    .catch(() => "");
+}
 
 type EmbedMode = "loading" | "live" | "fallback";
 
@@ -28,8 +36,10 @@ type BaEmbedProps = {
 export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", frameOrigin, hideNav, onReady, spaceTabs = false }: BaEmbedProps) {
   const targetOrigin = (frameOrigin || origin).replace(/\/$/, "");
   const [mode, setMode] = useState<EmbedMode>(targetOrigin ? "loading" : "fallback");
-  const tokenRef = useRef("");
+  const openedAs = currentPortalSession();
+  const tokenRef = useRef(openedAs?.mode === "user" ? openedAs.token : "");
   const pendingRef = useRef<Set<Window>>(new Set());
+  const [frameNonce, setFrameNonce] = useState(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const onReadyRef = useRef(onReady);
   const shellWatch = useRef<MutationObserver | null>(null);
@@ -73,15 +83,39 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
     };
 
     window.addEventListener("message", onMessage);
-    fetch("/embed-auth", { cache: "no-store", credentials: "same-origin" })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data: { token?: unknown } | null) => {
-        if (cancelled) return;
-        const token = typeof data?.token === "string" ? data.token.trim() : "";
-        if (!token) return;
-        tokenRef.current = token;
-        for (const source of pendingRef.current) deliver(source, token);
+
+    const publish = (token: string) => {
+      const previous = tokenRef.current;
+      if (!token || token === previous) return;
+      tokenRef.current = token;
+      if (previous) {
         pendingRef.current.clear();
+        setFrameNonce((nonce) => nonce + 1);
+        return;
+      }
+      for (const source of pendingRef.current) deliver(source, token);
+      pendingRef.current.clear();
+      const child = frameRef.current?.contentWindow;
+      if (child) deliver(child, token);
+    };
+
+    whenPortalSession()
+      .then((session) => {
+        if (cancelled) return;
+        if (session.mode === "user") {
+          if (tokenRef.current === session.token) {
+            const child = frameRef.current?.contentWindow;
+            if (child) deliver(child, session.token);
+          } else {
+            publish(session.token);
+          }
+          return;
+        }
+        if (session.mode !== "admin") return;
+        return readEmbedAuth().then((token) => {
+          if (cancelled) return;
+          publish(token);
+        });
       })
       .catch(() => {});
 
@@ -124,8 +158,21 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
     };
   }, [spaceTabs, targetOrigin, mode]);
 
+  const grant = currentPortalSession();
+  const frameAllowed = grant?.mode === "admin" || grant?.mode === "user";
+
   if (!targetOrigin || (variant === "home" && mode === "fallback")) {
     return <AgentWorkbench />;
+  }
+
+  if (!frameAllowed) {
+    return (
+      <div className={variant === "home" ? "ba-embed ba-embed-home" : "ba-embed"}>
+        <div className="ba-embed-hold" role="status">
+          {grant?.mode === "unauthorized" ? "未收到授权，页面未打开。" : "正在等待授权…"}
+        </div>
+      </div>
+    );
   }
 
   function watchSameOriginShell(frame: HTMLIFrameElement) {
@@ -175,7 +222,7 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
       <iframe
         ref={frameRef}
         className="ba-frame"
-        key={src}
+        key={`${src}#${frameNonce}`}
         title={title}
         src={src}
         scrolling="no"

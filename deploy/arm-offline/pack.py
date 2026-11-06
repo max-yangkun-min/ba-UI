@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-STAGE = "20261103-blade-arm-offline"
+STAGE = "20261105-blade-arm-offline"
 OUT = ROOT / "deliver" / f"{STAGE}.tar.gz"
 BINARY_EXT = {".ttf", ".woff", ".woff2", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".eot", ".zip"}
 JWT = re.compile(br"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")
@@ -83,8 +83,10 @@ def main() -> None:
     for needle in ("智能体创建", "知识库搭建", "技能开发", "MCP工具接入", "提示词模板", "scrolling"):
         if needle not in shell_text:
             raise SystemExit("shell bundle is missing %s" % needle)
-    if "对海作战" in embed_text:
-        raise SystemExit("embed bundle still has the old skill categories")
+        if "对海作战" in embed_text:
+            raise SystemExit("embed bundle still has the old skill categories")
+        if "未收到授权，页面未打开。" not in embed_text or "正在等待授权" not in embed_text:
+            raise SystemExit("embed bundle is missing the per-page auth hold")
 
     if OUT.exists():
         OUT.unlink()
@@ -94,6 +96,7 @@ def main() -> None:
             add(tar, name, payload(deploy / name), 0o755 if name.endswith(".sh") else 0o644)
         add(tar, "部署说明.md", payload(ROOT / "部署说明.md"), 0o644)
         add(tar, "大系统嵌入说明.md", payload(ROOT / "大系统嵌入说明.md"), 0o644)
+        add(tar, "前端对接说明.md", payload(ROOT / "前端对接说明.md"), 0o644)
         add(tar, "embed-app/serve.py", payload(ROOT / "blade-product" / "embed-app" / "serve.py"), 0o644)
         space_example = payload(ROOT / "blade-product" / "embed-app" / "space-urls.json.example")
         for needle in (
@@ -139,6 +142,7 @@ def main() -> None:
             f"{STAGE}/uninstall.sh",
             f"{STAGE}/部署说明.md",
             f"{STAGE}/大系统嵌入说明.md",
+            f"{STAGE}/前端对接说明.md",
             f"{STAGE}/proxy.env.example",
             f"{STAGE}/embed-app/dist/index.html",
             f"{STAGE}/embed-app/dist/blade-site.js",
@@ -183,7 +187,7 @@ def main() -> None:
             required.append(f"{STAGE}/experts/{expert}/scenario.json")
         ui_ver = tar.extractfile(f"{STAGE}/blade-ui-plugin/VERSION").read().strip()
         iframe_ver = tar.extractfile(f"{STAGE}/blade-iframe-plugin/VERSION").read().strip()
-        if ui_ver != b"0.2.104":
+        if ui_ver != b"0.2.105":
             problems.append("ui version %s" % ui_ver)
         ui_css = tar.extractfile(f"{STAGE}/blade-ui-plugin/files/blade-ui-theme-ba.css").read()
         if b"data-resize-handle" not in ui_css or b"width: 9px" not in ui_css:
@@ -191,10 +195,10 @@ def main() -> None:
         ui_js = tar.extractfile(f"{STAGE}/blade-ui-plugin/files/blade-ui-theme.js").read()
         if b"127.0.0.1" in ui_js or b"agent log" in ui_js:
             problems.append("ui script still has debug logging")
-        if iframe_ver != b"1.1.28":
+        if iframe_ver != b"1.1.29":
             problems.append("iframe version %s" % iframe_ver)
         notes = tar.extractfile(f"{STAGE}/部署说明.md").read().decode("utf-8")
-        for needle in ("20261103-blade-arm-offline", "http://<生产IP>:5173/resources/agents", "http://<生产IP>:5173/console/app-dev/factory", "20261022-skills"):
+        for needle in ("20261105-blade-arm-offline", "http://<生产IP>:5173/resources/agents", "http://<生产IP>:5173/console/app-dev/factory", "20261022-skills"):
             if needle not in notes:
                 problems.append("部署说明 missing " + needle)
         if "import-skills" in notes:

@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "./components/Toast";
+import { UserAuthGate } from "./lib/UserAuthGate";
 import { AppDevEmbedPage } from "./pages/AppDevEmbedPage";
 import { EmbedChatSpace } from "./pages/EmbedChatSpace";
 import { MockAgentCatalog } from "./pages/MockAgentCatalog";
@@ -23,9 +24,9 @@ export function App() {
     <ToastProvider>
       <div className="embed-app">
         <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/chat-workspace" element={<EmbedChatSpace mode="workspace" />} />
-          <Route path="/chat-admin" element={<EmbedChatSpace mode="admin" />} />
+          <Route path="/" element={<UserAuthGate><HomePage /></UserAuthGate>} />
+          <Route path="/chat-workspace" element={<UserAuthGate><EmbedChatSpace mode="workspace" /></UserAuthGate>} />
+          <Route path="/chat-admin" element={<UserAuthGate><EmbedChatSpace mode="admin" /></UserAuthGate>} />
           <Route path="/resources/skills" element={<ResourceCatalogPage kind="skills" />} />
           <Route path="/resources/knowledge" element={<ResourceCatalogPage kind="knowledge" />} />
           <Route path="/resources/agents" element={<MockAgentCatalog />} />
@@ -36,10 +37,10 @@ export function App() {
           <Route path="/resources/prompts" element={<Navigate to="/console/app-dev/prompts" replace />} />
           <Route path="/resources/prompts/*" element={<Navigate to="/console/app-dev/prompts" replace />} />
           <Route path="/resources/:kind/*" element={<ResourceDetailPage />} />
-          <Route path="/console/app-dev/prompts/:scope/:id" element={<PromptEngineeringPage />} />
-          <Route path="/console/app-dev/prompts" element={<PromptEngineeringPage />} />
+          <Route path="/console/app-dev/prompts/:scope/:id" element={<UserAuthGate><PromptEngineeringPage /></UserAuthGate>} />
+          <Route path="/console/app-dev/prompts" element={<UserAuthGate><PromptEngineeringPage /></UserAuthGate>} />
           <Route path="/console/prompts" element={<Navigate to="/console/app-dev/prompts" replace />} />
-          <Route path="/console/app-dev/:baModule/*" element={<AppDevEmbedPage />} />
+          <Route path="/console/app-dev/:baModule/*" element={<UserAuthGate><AppDevEmbedPage /></UserAuthGate>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

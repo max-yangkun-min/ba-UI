@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var PLUGIN_VERSION = "1.1.28";
+  var PLUGIN_VERSION = "1.1.29";
   var params = new URLSearchParams(window.location.search);
   var embedMode =
     params.get("mode") === "embed" ||
@@ -239,6 +239,7 @@
   }
 
   function stayInEmbed(url) {
+    if (takeSessionFile(url, "")) return;
     withEmbedQuery(url);
     window.location.assign(url.toString());
   }
@@ -263,8 +264,21 @@
     stayInEmbed(url);
   }, true);
 
+  // 已经在页面里的文件链接。捕获阶段不拦，留给页面自己的点击处理先 preventDefault。
+  // 页面没拦住时，再用内存令牌下载，避免浏览器直接打开这条地址。
+  document.addEventListener("click", function (event) {
+    if (event.defaultPrevented || event.button !== 0) return;
+    var node = event.target;
+    if (!node || !node.closest) return;
+    var anchor = node.closest("a[href]");
+    if (!anchor) return;
+    if (!takeSessionFile(anchor.href, anchor.getAttribute("download") || "")) return;
+    event.preventDefault();
+  }, false);
+
   var nativeWindowOpen = window.open;
   window.open = function (url, target) {
+    if (url && takeSessionFile(url, "")) return window;
     if (url && breaksOut(target || "_blank")) {
       var parsed = sameOriginHttp(String(url));
       if (parsed) {
@@ -788,6 +802,146 @@
       nativeSend.call(xhr, body);
     });
   };
+
+  // 工作空间下载不走 fetch/XHR。文件树会临时造一个带 download 的 <a> 再 click()，
+  // 这个节点不在文档里，document 上的点击监听看不到。这里只认会话文件地址，
+  // 用内存里的令牌发请求。令牌不写进 URL。没有令牌时保持原来的跳转。
+  function sessionFileUrl(href) {
+    var url = sameOriginHttp(href);
+    if (!url) return null;
+    var path = url.pathname || "";
+    if (/^\/api\/sessions\/[^/]+\/files\/.+/.test(path)) return url;
+    if (/^\/api\/sessions\/[^/]+\/download-dir\/.+/.test(path)) return url;
+    return null;
+  }
+
+  function filenameFromDisposition(header) {
+    var text = String(header || "");
+    var star = /filename\*\s*=\s*([^;]+)/i.exec(text);
+    if (star) {
+      var raw = star[1].trim().replace(/^"(.*)"$/, "$1");
+      var encoded = raw;
+      var splitAt = raw.indexOf("''");
+      if (splitAt !== -1) encoded = raw.slice(splitAt + 2);
+      try {
+        encoded = decodeURIComponent(encoded);
+      } catch (_) {}
+      if (encoded) return encoded;
+    }
+    var plain = /filename\s*=\s*("([^"]*)"|[^;]+)/i.exec(text);
+    if (!plain) return "";
+    if (plain[2] != null) return plain[2];
+    return String(plain[1] || "").trim().replace(/^"(.*)"$/, "$1");
+  }
+
+  function downloadBasename(name) {
+    var text = String(name || "").replace(/[\u0000-\u001f]/g, " ").trim();
+    var parts = text.split(/[/\\]/);
+    text = parts[parts.length - 1] || "";
+    if (!text || text === "." || text === "..") return "";
+    return text;
+  }
+
+  function saveName(disposition, hintedName, url) {
+    var fromHeader = downloadBasename(filenameFromDisposition(disposition));
+    if (fromHeader) return fromHeader;
+    var fromHint = downloadBasename(hintedName);
+    if (fromHint) return fromHint;
+    var segment = "";
+    try {
+      segment = decodeURIComponent((url.pathname || "").split("/").pop() || "");
+    } catch (_) {
+      segment = (url.pathname || "").split("/").pop() || "";
+    }
+    return downloadBasename(segment) || "download";
+  }
+
+  function triggerBrowserSave(blob, name) {
+    var objectUrl = URL.createObjectURL(blob);
+    var anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = name;
+    if (document.body) document.body.appendChild(anchor);
+    try {
+      nativeAnchorClick.call(anchor);
+    } finally {
+      if (anchor.parentNode) anchor.parentNode.removeChild(anchor);
+      window.setTimeout(function () {
+        try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+      }, 1500);
+    }
+  }
+
+  function saveSessionFile(url, hintedName) {
+    var value = token;
+    if (!value) return;
+    nativeFetch(url.toString(), {
+      method: "GET",
+      headers: { Authorization: "Bearer " + value },
+      credentials: "omit",
+    }).then(function (response) {
+      if (!response || !response.ok) return;
+      var disposition = "";
+      try { disposition = response.headers.get("Content-Disposition") || ""; } catch (_) {}
+      var name = saveName(disposition, hintedName, url);
+      return response.blob().then(function (blob) {
+        triggerBrowserSave(blob, name);
+      });
+    }).catch(function () {});
+  }
+
+  function takeSessionFile(href, hintedName) {
+    try {
+      if (!token || typeof nativeFetch !== "function") return false;
+      var url = sessionFileUrl(href);
+      if (!url) return false;
+      saveSessionFile(url, hintedName || "");
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  var nativeAnchorClick = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function () {
+    var hinted = "";
+    var href = "";
+    try {
+      if (this.getAttribute) hinted = this.getAttribute("download") || "";
+      href = this.href;
+    } catch (_) {}
+    if (takeSessionFile(href, hinted)) return;
+    return nativeAnchorClick.apply(this, arguments);
+  };
+
+  function installLocationFileGuard() {
+    var proto = window.Location && window.Location.prototype;
+    if (!proto) return;
+    ["assign", "replace"].forEach(function (name) {
+      var orig = proto[name];
+      if (typeof orig !== "function") return;
+      try {
+        proto[name] = function (nextUrl) {
+          if (takeSessionFile(nextUrl, "")) return;
+          return orig.call(this, nextUrl);
+        };
+      } catch (_) {}
+    });
+    try {
+      var desc = Object.getOwnPropertyDescriptor(proto, "href");
+      if (!desc || !desc.configurable || typeof desc.set !== "function" || typeof desc.get !== "function") return;
+      Object.defineProperty(proto, "href", {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: function () { return desc.get.call(this); },
+        set: function (nextUrl) {
+          if (takeSessionFile(nextUrl, "")) return;
+          desc.set.call(this, nextUrl);
+        },
+      });
+    } catch (_) {}
+  }
+  installLocationFileGuard();
 
   // <img>/<video> 不走 fetch，嵌进别的站点时也带不上 8020 的会话 Cookie。
   // 素材接口只认地址上的令牌，这里把已有的嵌入令牌补到同源 /api 图片上。

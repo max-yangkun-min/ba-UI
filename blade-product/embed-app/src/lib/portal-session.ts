@@ -1,12 +1,19 @@
 import { setPromptOwner } from "../features/prompts/storage";
+import { pageAuthPolicy } from "./page-auth";
 
 /**
- * 门户（另一源站）说明当前是超级管理员视角，还是已登录用户的平台票。
- * 票只走 postMessage，不进地址栏。未收到用户票时，接口仍由开发代理附上整站票。
+ * 宿主先 POST /exchange，再等本页发出 blade-embed-ready，回 { type: "blade-embed-token", token }。
+ * 票只走 postMessage，不进地址栏。本页不验签，原样交给内层 Blade。
+ * 门户展示页始终是超级管理员，用户票到了也不换身份。
+ * 对话和后台应用开发只接受父页面传来的平台 JWT。父页面明确回 { admin: true } 时才用超级管理员。
+ * 单独打开，或约 4 秒内没有票，停在未授权，不用超级管理员去写对话数据。
  */
 export type PortalSession =
   | { mode: "admin" }
-  | { mode: "user"; token: string; owner: string };
+  | { mode: "user"; token: string; owner: string }
+  | { mode: "unauthorized" };
+
+const AUTH_WAIT_MS = 4000;
 
 const PROXIED = ["/api-ba/", "/api-bh/", "/api-llm/", "/api-bos/", "/api/catalog-counts"];
 
@@ -18,6 +25,10 @@ const ready = new Promise<PortalSession>((resolve) => {
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeToken(value: string) {
+  return value.trim().replace(/^Bearer\s+/i, "");
 }
 
 function decodePayload(token: string): Record<string, unknown> | null {
@@ -54,9 +65,11 @@ function ownerFromToken(token: string) {
 
 function finish(session: PortalSession) {
   if (settled) {
-    if (settled.mode === "admin" && session.mode === "user") {
+    const lateUser = settled.mode !== "user" && session.mode === "user";
+    const lateAdmin = settled.mode === "unauthorized" && session.mode === "admin";
+    if (lateUser || lateAdmin) {
       settled = session;
-      setPromptOwner(session.owner);
+      setPromptOwner(session.mode === "user" ? session.owner : "");
       window.location.reload();
     }
     return;
@@ -97,6 +110,12 @@ function installFetchBridge() {
   window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
     if (!isProxied(input)) return nativeFetch(input, init);
     return ready.then((session) => {
+      if (session.mode === "unauthorized") {
+        return new Response(JSON.stringify({ error: "unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       if (session.mode !== "user") return nativeFetch(input, init);
       const headers = new Headers(init?.headers);
       if (input instanceof Request && !init?.headers) {
@@ -109,8 +128,12 @@ function installFetchBridge() {
 }
 
 function armHandshake() {
-  if (window.parent === window) {
+  if (pageAuthPolicy(window.location.pathname) === "portal") {
     finish({ mode: "admin" });
+    return;
+  }
+  if (window.parent === window) {
+    finish({ mode: "unauthorized" });
     return;
   }
   const parentOrigin = hintedParent();
@@ -119,8 +142,9 @@ function armHandshake() {
     if (parentOrigin && event.origin !== parentOrigin) return;
     const data = event.data as { type?: string; token?: unknown; admin?: unknown } | null;
     if (!data || data.type !== "blade-embed-token") return;
-    if (typeof data.token === "string" && data.token.trim()) {
-      const token = data.token.trim();
+    if (typeof data.token === "string") {
+      const token = normalizeToken(data.token);
+      if (!token) return;
       finish({ mode: "user", token, owner: ownerFromToken(token) });
       return;
     }
@@ -141,13 +165,13 @@ function armHandshake() {
   }, 250);
   window.setTimeout(() => {
     window.clearInterval(timer);
-    if (!settled) finish({ mode: "admin" });
-  }, 4000);
+    if (!settled) finish({ mode: "unauthorized" });
+  }, AUTH_WAIT_MS);
 }
 
 const INSTALLED = "__bladePortalSession";
 
-/** 嵌在门户里时向父页面要票，单独打开则是超级管理员。页面马上画，不等这张票；走代理的接口会等到票确定后再发出。 */
+/** 按当前地址决定向父页面要票，还是直接用超级管理员。走代理的接口会等到票确定后再发出。 */
 export function installPortalSession(): Promise<PortalSession> {
   const holder = window as Window & { [INSTALLED]?: Promise<PortalSession> };
   if (!holder[INSTALLED]) {
@@ -160,6 +184,11 @@ export function installPortalSession(): Promise<PortalSession> {
 
 export function whenPortalSession(): Promise<PortalSession> {
   return ready;
+}
+
+/** 宿主交来的平台 JWT。门户页、未授权、以及父页面明确要求超级管理员时返回空串。 */
+export function portalUserToken(): Promise<string> {
+  return ready.then((session) => (session.mode === "user" ? session.token : ""));
 }
 
 /** 票还没到时返回 null。 */

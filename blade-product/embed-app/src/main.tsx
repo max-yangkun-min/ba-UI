@@ -5,7 +5,7 @@ import { installEmbedResize } from "./lib/embed-resize";
 import { installPortalSession } from "./lib/portal-session";
 
 installEmbedResize();
-// 票在后台问父页面要。这里不等它：等的话，父页面不回答就会空白大约 4 秒，内层对话地址也跟着晚。
+// 门户展示页不等票。对话和后台开发页自己等父页面的票，超时也不要用超级管理员先把内层打开。
 void installPortalSession();
 
 createRoot(document.getElementById("root")!).render(

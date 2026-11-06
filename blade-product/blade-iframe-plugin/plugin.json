@@ -1,7 +1,7 @@
 {
   "name": "blade-iframe-plugin",
   "displayName": "BA/BH iframe Token 桥",
-  "version": "1.1.28",
+  "version": "1.1.29",
   "kind": "runtime-addon",
   "independentOf": "blade-service-deployer",
   "targets": [

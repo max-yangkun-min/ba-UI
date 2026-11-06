@@ -1,5 +1,6 @@
-/* blade-ui-plugin 0.2.64 — Blade Agent
+/* blade-ui-plugin 0.2.105 — Blade Agent
  * 对齐《UI界面设计规范》V1.0.4：颜色、字号、导航行、按钮、输入、表格、卡片、弹层。
+ * 0.2.105 嵌入态侧栏底部整块账号栏（头像、管理员、三个点）藏掉。
  * 0.2.62 技能目录外壳锁在窗口高度内，只让技能主区滚动。
  * 颜色变量是 HSL。
  */
@@ -2127,38 +2128,18 @@ html[data-blade-ui-page="knowledge"] [class*="rounded-[12px]"][class*="border"]:
   background: #f0f6ff !important;
 }
 
-/* 0.2.95 侧栏底部账号按钮只留三个点。头像和用户名继续藏，按钮还在 DOM 里，点开仍是账号菜单。
-   折叠轨上的圆形头像（用户菜单）没有三个点，继续藏。顶栏用户芯片不走这条。 */
-html:has(#blade-embed-chrome-style) #unified-shell-sidebar button[aria-label^="用户菜单"] {
+/* 0.2.105 嵌入态侧栏底部整块账号栏藏掉：头像、名字、管理员徽标、右侧三个点。
+   展开态按钮 aria-label 以「账号详情」开头，折叠轨圆形头像以「用户菜单」开头。
+   软件工厂项目树下面和对话侧栏是同一块。只藏按钮，以及直接包着它的那一层。
+   不碰新建对话、历史对话、批量删除、对话列表设置。顶栏用户芯片没有这两个 aria-label。 */
+html:has(#blade-embed-chrome-style) button[aria-label^="账号详情"],
+html:has(#blade-embed-chrome-style) button[aria-label^="用户菜单"] {
   display: none !important;
 }
 
-html:has(#blade-embed-chrome-style) #unified-shell-sidebar button[aria-label^="账号详情"] {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  width: 36px !important;
-  min-width: 36px !important;
-  max-width: 36px !important;
-  height: 36px !important;
-  margin: 4px 0 4px 12px !important;
-  padding: 0 !important;
-  gap: 0 !important;
-  border-radius: 4px !important;
-  background: transparent !important;
-  color: #646566 !important;
-}
-
-html:has(#blade-embed-chrome-style) #unified-shell-sidebar button[aria-label^="账号详情"] > :not(:last-child) {
+html:has(#blade-embed-chrome-style) div:has(> button[aria-label^="账号详情"]),
+html:has(#blade-embed-chrome-style) div:has(> button[aria-label^="用户菜单"]) {
   display: none !important;
-}
-
-html:has(#blade-embed-chrome-style) #unified-shell-sidebar button[aria-label^="账号详情"] > :last-child {
-  display: grid !important;
-  width: 28px !important;
-  height: 28px !important;
-  margin: 0 !important;
-  color: #646566 !important;
 }
 
 /* 嵌入态对话侧栏：隐去「软件工厂」和「定时任务」。技能、知识库、应用市场保留。
