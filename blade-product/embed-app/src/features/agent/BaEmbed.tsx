@@ -45,9 +45,10 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
   const shellWatch = useRef<MutationObserver | null>(null);
   const shellTicket = useRef(0);
   onReadyRef.current = onReady;
-  // 只藏画面，地址在首屏就设上。标签等侧栏「新建对话」画出来再一起出现。
+  // 只藏画面，地址在首屏就设上。标签跟着内层对话侧栏：能看到「新建对话」才出现，离开后再藏。
   const quiet = variant === "home";
   const [shown, setShown] = useState(!quiet);
+  const [shellOn, setShellOn] = useState(false);
 
   useEffect(() => {
     if (!targetOrigin) return;
@@ -66,7 +67,11 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
       const data = event.data as { type?: string; mode?: string; height?: number; ready?: boolean } | null;
       if (!data) return;
       if (frameRef.current && event.source !== frameRef.current.contentWindow) return;
-      if (data.type === "blade-embed-shell" && data.ready === true) setShown(true);
+      if (data.type === "blade-embed-shell") {
+        const ready = data.ready === true;
+        setShellOn(ready);
+        if (ready) setShown(true);
+      }
       if (data.type === "blade-embed-ready" || data.type === "blade-embed-resize") {
         applyEmbedHeight(frameRef.current, data.mode, data.height, variant);
         onReadyRef.current?.();
@@ -187,27 +192,22 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
     }
     if (!doc) return;
     const live = doc;
-    const reveal = () => {
-      if (shellTicket.current !== ticket) return true;
-      if (!visibleNewChat(live)) return false;
-      setShown(true);
-      shellWatch.current?.disconnect();
-      shellWatch.current = null;
-      return true;
+    const sync = () => {
+      if (shellTicket.current !== ticket) return;
+      const on = visibleNewChat(live);
+      setShellOn(on);
+      if (on) setShown(true);
     };
-    if (reveal()) return;
+    sync();
     const root = live.documentElement;
     if (!root) return;
     const obs = new MutationObserver(() => {
       window.requestAnimationFrame(() => {
-        reveal();
+        sync();
       });
     });
     obs.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["class", "style", "hidden"] });
     shellWatch.current = obs;
-    window.requestAnimationFrame(() => {
-      reveal();
-    });
   }
 
   // 内层页面只接受直接父页面传来的票，embed_parent 必须是本嵌入页自己的源站。
@@ -227,6 +227,7 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
         src={src}
         scrolling="no"
         data-quiet={quiet && !shown ? "1" : undefined}
+        data-shell={spaceTabs ? (shellOn ? "1" : "0") : undefined}
         onLoad={(event) => {
           onReadyRef.current?.();
           const frame = event.currentTarget;

@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "../components/Icon";
-import { portalAgentCategory } from "../features/resources/agent-categories";
 import {
   dedupeAgentLists,
   loadAgentBundle,
   type MarketListing,
 } from "../features/resources/agent-market";
+import { OfficeFacetNav } from "../features/resources/OfficeFacetNav";
+import { matchOfficeItems, officeGroupIdOf, officeGroups, officeItemName } from "../features/resources/office-taxonomy";
 import { resourceDetailPath } from "../features/resources/detail";
 import { formatStatNumber, type ResourceStat } from "../features/resources/stats";
 
 const PAGE_SIZE = 12;
-const RANK_SIZE = 5;
 
 type SortKey = "default" | "usage" | "rating" | "updated";
 
@@ -20,6 +20,7 @@ type AgentCard = {
   name: string;
   desc: string;
   category: string;
+  officeItemIds: string[];
   source: string;
   status: string;
   owner: string;
@@ -43,7 +44,8 @@ export function MockAgentCatalog() {
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("");
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  const [folded, setFolded] = useState<Record<string, boolean>>({});
   const [sort, setSort] = useState<SortKey>("default");
   const [page, setPage] = useState(1);
 
@@ -59,12 +61,14 @@ export function MockAgentCatalog() {
         if (cancelled) return;
         const notes = bundle.marketError ? [bundle.marketError] : [];
         const visible = uniqueMarketListings(dedupeAgentLists(bundle).listings);
-        const cards = visible.map((item) =>
-          toCard(
+        const cards = visible.map((item) => {
+          const officeItemIds = matchOfficeItems(item.name, item.summary, item.tags);
+          return toCard(
             `market-${item.id}`,
             item.name,
             item.summary,
-            portalAgentCategory(item.name, item.summary, item.tags),
+            officeItemIds.map((id) => officeItemName(id)).filter(Boolean).join(" "),
+            officeItemIds,
             "市场",
             listingLabel(item),
             item.owner,
@@ -72,8 +76,8 @@ export function MockAgentCatalog() {
             item.updatedAt,
             item.usage,
             item.rating,
-          ),
-        );
+          );
+        });
         setItems(cards);
         setError(cards.length === 0 && notes.length > 0 ? notes.join(" ") : "");
         setPhase(cards.length === 0 && notes.length > 0 ? "error" : "ready");
@@ -88,19 +92,23 @@ export function MockAgentCatalog() {
     };
   }, []);
 
-  const categories = useMemo(() => {
-    return [...new Set(items.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-CN"));
-  }, [items]);
-
   const hasUpdated = useMemo(() => items.some((item) => item.updatedAt), [items]);
   const sortOptions = hasUpdated ? sorts : sorts.filter((item) => item.key !== "updated");
 
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
     const list = items.filter((item) => {
-      if (category && item.category !== category) return false;
+      for (const group of officeGroups) {
+        const selected = picked[group.id];
+        if (selected && !item.officeItemIds.includes(selected)) return false;
+      }
       if (!text) return true;
-      return [item.name, item.desc, item.category, item.source, item.status, item.owner, ...item.tags].join(" ").toLowerCase().includes(text);
+      const officeText = item.officeItemIds.flatMap((id) => {
+        const groupId = officeGroupIdOf(id);
+        const group = officeGroups.find((entry) => entry.id === groupId);
+        return [officeItemName(id), group?.name ?? ""];
+      });
+      return [item.name, item.desc, item.category, item.source, item.status, item.owner, ...officeText, ...item.tags].join(" ").toLowerCase().includes(text);
     });
     const next = list.map((item, index) => ({ item, index }));
     if (sort === "usage") {
@@ -111,20 +119,7 @@ export function MockAgentCatalog() {
       next.sort((a, b) => compareText(b.item.updatedAt, a.item.updatedAt) || a.index - b.index);
     }
     return next.map((entry) => entry.item);
-  }, [items, category, query, sort, hasUpdated]);
-
-  const ranked = useMemo(() => {
-    return items
-      .map((item, index) => ({ item, index }))
-      .sort((a, b) => compareNumber(b.item.usage, a.item.usage) || a.index - b.index)
-      .slice(0, RANK_SIZE)
-      .map((entry) => entry.item);
-  }, [items]);
-
-  const rankNote = useMemo(() => {
-    const hints = [...new Set(items.map((item) => item.usageHint).filter((hint): hint is string => Boolean(hint)))];
-    return hints.length === 1 ? `按${hints[0]}` : "按用量";
-  }, [items]);
+  }, [items, picked, query, sort, hasUpdated]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -132,9 +127,17 @@ export function MockAgentCatalog() {
 
   useEffect(() => {
     setPage(1);
-  }, [query, category, sort, items]);
+  }, [query, picked, sort, items]);
 
   const openItem = (id: string) => navigate(resourceDetailPath("agents", id));
+  const pickGroup = (groupId: string, itemId: string) => {
+    setPicked((prev) => {
+      const next = { ...prev };
+      if (!itemId) delete next[groupId];
+      else next[groupId] = itemId;
+      return next;
+    });
+  };
   const rangeText = filtered.length === 0 ? "0" : `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filtered.length)}`;
   const sortCaption = sort === "usage" ? "按用量排序" : sort === "rating" ? "按评分排序" : sort === "updated" ? "按更新时间排序" : "默认排序";
 
@@ -144,42 +147,12 @@ export function MockAgentCatalog() {
       <div className="agent-catalog-frame">
         <div className="agent-catalog-stage">
           <div className="agent-cat-side">
-            <aside className="agent-cat-panel" aria-label="分类">
-              <div className="agent-cat-title">分类</div>
-              <div className="agent-cat-list" role="group" aria-label="分类">
-                <button type="button" aria-pressed={category === ""} onClick={() => setCategory("")}>
-                  全部
-                </button>
-                {categories.map((option) => (
-                  <button key={option} type="button" aria-pressed={category === option} onClick={() => setCategory(option)}>
-                    {option}
-                  </button>
-                ))}
-              </div>
-            </aside>
-            {ranked.length > 0 ? (
-              <aside className="agent-rank" aria-label="常用排行">
-                <div className="agent-rank-head">
-                  <h2>常用排行</h2>
-                  <p>{rankNote}</p>
-                </div>
-                <ol className="agent-rank-list">
-                  {ranked.map((item, index) => (
-                    <li key={item.id}>
-                      <button type="button" className={`agent-rank-item is-${index + 1}`} onClick={() => openItem(item.id)}>
-                        <span className="agent-rank-no">{index + 1}</span>
-                        <span className="agent-rank-name" title={item.name}>
-                          {item.name}
-                        </span>
-                        <span className="agent-rank-usage" title={item.usageHint || "用量"}>
-                          {item.usage === undefined ? "暂无" : formatStatNumber(item.usage)}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ol>
-              </aside>
-            ) : null}
+            <OfficeFacetNav
+              picked={picked}
+              folded={folded}
+              onFold={(groupId, open) => setFolded((prev) => ({ ...prev, [groupId]: open }))}
+              onPick={pickGroup}
+            />
           </div>
           <div className="agent-catalog-main">
             <div className="agent-main-sort">
@@ -238,7 +211,7 @@ export function MockAgentCatalog() {
                   <button
                     type="button"
                     onClick={() => {
-                      setCategory("");
+                      setPicked({});
                       setQuery("");
                     }}
                   >
@@ -282,24 +255,28 @@ export function MockAgentCatalog() {
                       >
                         查看
                       </button>
-                      {item.status ? <span className={`agent-card-status ${statusTone(item.status)}`}>{item.status}</span> : null}
+                      {item.status && item.status !== "可添加" ? (
+                        <span className={`agent-card-status ${statusTone(item.status)}`}>{item.status}</span>
+                      ) : null}
                     </div>
                     <p className="agent-card-desc">{item.desc || "暂无"}</p>
                     <div className="agent-card-tags">
-                      {item.category ? (
+                      {item.officeItemIds[0] ? (
                         <button
                           className="agent-card-tag"
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            setCategory(item.category);
+                            const itemId = item.officeItemIds[0];
+                            const groupId = officeGroupIdOf(itemId);
+                            if (groupId) setPicked({ [groupId]: itemId });
                           }}
                         >
-                          {item.category}
+                          {officeItemName(item.officeItemIds[0])}
                         </button>
                       ) : null}
                       {item.tags
-                        .filter((tag) => tag !== item.category)
+                        .filter((tag) => tag !== officeItemName(item.officeItemIds[0] ?? ""))
                         .slice(0, 3)
                         .map((tag) => (
                           <span className="agent-card-tag" key={tag}>
@@ -384,6 +361,7 @@ function toCard(
   name: string,
   desc: string,
   category: string,
+  officeItemIds: string[],
   source: string,
   status: string,
   owner: string,
@@ -397,6 +375,7 @@ function toCard(
     name,
     desc,
     category,
+    officeItemIds,
     source,
     status,
     owner: owner && owner !== "匿名" ? owner : "",
@@ -411,7 +390,7 @@ function toCard(
 function listingLabel(item: MarketListing) {
   if (item.installed) return "已添加";
   if (!item.available) return "暂不可用";
-  return "可添加";
+  return "";
 }
 
 function statusTone(status: string) {

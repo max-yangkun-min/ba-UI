@@ -6,7 +6,7 @@
   var observer = null;
   var sidebarExpandTries = 0;
   var routeWatchBound = false;
-  var embedShellPosted = false;
+  var embedShellReady = null;
 
   // 运营中心整页走 Blade 原生界面：/admin 以及 ?tab= 下的总览、趋势、平台能力等。
   // 停掉主题样式表，颜色、顶栏和布局回到产品自己的样式。对话、技能、知识库和公开壳不走这里。
@@ -82,10 +82,13 @@
     if (!/^\/chat(\/|$)/.test(path)) return false;
     // 分组详情也在 /chat/ 下，但不是会话正文。套上对话列会把指令、输入框和会话收成一条。
     if (/^\/chat\/groups(\/|$)/.test(path)) return false;
+    var root = conversationRoot();
+    // 问候还在时仍是首页窄输入栏，包括从知识库市场点进来的 ?kb=。
+    // 不能当成会话正文，否则主列会被收成内容宽，右边留下空壳。
+    if (root && root.querySelector("h1.home-greeting-in")) return false;
     if (/^\/chat\/.+/.test(path)) return true;
     if (/[?&]kb=/.test(window.location.search || "")) return true;
-    var root = conversationRoot();
-    return !!root && !root.querySelector("h1.home-greeting-in");
+    return !!root;
   }
 
   function clearConversationSkin(root) {
@@ -131,10 +134,22 @@
         while (column.parentElement && column.parentElement !== parent) column = column.parentElement;
       }
     } else {
-      var main = document.getElementById("unified-shell-main");
-      if (main && main.contains(composer)) column = main;
+      var shell = document.getElementById("unified-shell-main");
+      if (shell && shell.contains(composer)) {
+        var innerMain = shell.querySelector("main");
+        if (innerMain && innerMain.contains(composer)) column = innerMain;
+        else if (shell.firstElementChild && shell.firstElementChild !== shell && shell.firstElementChild.contains(composer)) column = shell.firstElementChild;
+        else column = composer;
+      }
     }
-    if (column.id === "unified-shell-sidebar") return null;
+    // 分栏外壳的 flex 写在行内。打在 #unified-shell-main 上会被 all:revert-layer 打回 0 1 auto。
+    if (column && column.id === "unified-shell-main") {
+      var held = column.querySelector("main");
+      if (held && held.contains(composer)) column = held;
+      else if (column.firstElementChild && column.firstElementChild.contains(composer)) column = column.firstElementChild;
+      else column = composer;
+    }
+    if (!column || column.id === "unified-shell-sidebar" || column.id === "unified-shell-main") return null;
     column.setAttribute("data-blade-ui-chat-column", "true");
     return column;
   }
@@ -801,12 +816,319 @@
     bindSkillCatScroll();
   }
 
+  // 嵌入态新用户引导。标题必须是「先让 Blade AI 更懂你」，并且「稍后再说」就在同一个 role=dialog 里。
+  // 点产品自己的按钮：跳过成功后 React 会卸掉对话框、灰色遮罩，并解开背后的 inert。
+  // 不 display:none，也不 remove 遮罩或对话框。那些节点不是插件的，删了下一次提交会 removeChild。
+  // 设置里的同名资料表单不在这个对话框里。重命名、删除确认、批量删除、连接器弹层对不上这句标题。
+  var onboardingSkipTries = 0;
+  var onboardingSkipAt = 0;
+
+  function dismissEmbedOnboarding() {
+    if (!inEmbedFrame()) return;
+    var dialog = null;
+    var headings = document.querySelectorAll("[role='dialog'] h1, [role='dialog'] h2, [role='dialog'] h3");
+    var i;
+    for (i = 0; i < headings.length; i += 1) {
+      if (compactText(headings[i]) !== "先让BladeAI更懂你") continue;
+      dialog = headings[i].closest("[role='dialog']");
+      if (dialog) break;
+    }
+    if (!dialog) {
+      onboardingSkipTries = 0;
+      return;
+    }
+    if (onboardingSkipTries >= 3) return;
+    var buttons = dialog.querySelectorAll("button");
+    for (i = 0; i < buttons.length; i += 1) {
+      var button = buttons[i];
+      if (compactText(button) !== "稍后再说") continue;
+      if (button.disabled) return;
+      if ((button.getAttribute("type") || "").toLowerCase() !== "button") continue;
+      if (Date.now() - onboardingSkipAt < 2500) return;
+      onboardingSkipTries += 1;
+      onboardingSkipAt = Date.now();
+      button.click();
+      return;
+    }
+  }
+
+  // 对话首页输入栏：「技能」「知识库」。
+  // 不往编辑器里塞 / 或 @。空的 / 面板只会显示「没有匹配」，这里用自己的列表。
+  // 技能来自对话客户端已有的 GET /api/skills/installed（已安装、可调用）。
+  // 知识库来自 fileMention 的 items（@ 面板那次加载），只留 kind=kb，文件不放进来。
+  // 点选后调用原来的 suggestion.command，插入 skillMention 或 kbMention。
+  var composerPicker = null;
+  var composerPickerBound = false;
+
+  function composerEditor(card) {
+    var pm = card && card.querySelector(".ProseMirror");
+    var editor = pm && pm.editor;
+    if (!editor || typeof editor.chain !== "function") return null;
+    return editor;
+  }
+
+  function composerExtension(editor, name) {
+    var list = editor.extensionManager && editor.extensionManager.extensions;
+    if (!list) return null;
+    var i;
+    for (i = 0; i < list.length; i += 1) {
+      if (list[i].name === name) return list[i];
+    }
+    return null;
+  }
+
+  function composerSuggestionCommand(editor, name) {
+    var ext = composerExtension(editor, name);
+    var suggestion = ext && ext.options && ext.options.suggestion;
+    if (!suggestion || typeof suggestion.command !== "function") return null;
+    return suggestion;
+  }
+
+  function waitComposer(ms) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  function loadComposerSkills() {
+    return fetch("/api/skills/installed", { credentials: "include" }).then(function (response) {
+      if (!response.ok) throw new Error("skills");
+      return response.json();
+    }).then(function (rows) {
+      if (!Array.isArray(rows)) return [];
+      var items = [];
+      var seen = {};
+      var i;
+      for (i = 0; i < rows.length; i += 1) {
+        var row = rows[i];
+        if (!row || typeof row !== "object") continue;
+        if (row.is_installed === false || row.installed === false) continue;
+        var skillId = row.id || row.skill_id;
+        if (!skillId || seen[skillId]) continue;
+        seen[skillId] = true;
+        items.push({
+          type: "skill",
+          skillId: skillId,
+          displayName: row.display_name || row.displayName || row.name || skillId,
+          description: row.description || "",
+          local: row.local === true,
+          installed: true
+        });
+      }
+      return items;
+    });
+  }
+
+  function knowledgeItems(list) {
+    var items = [];
+    var seen = {};
+    if (!Array.isArray(list)) return items;
+    var i;
+    for (i = 0; i < list.length; i += 1) {
+      var item = list[i];
+      if (!item || item.kind !== "kb" || typeof item.kbId !== "number") continue;
+      if (seen[item.kbId]) continue;
+      seen[item.kbId] = true;
+      items.push(item);
+    }
+    return items;
+  }
+
+  function loadComposerKnowledge(editor) {
+    var suggestion = composerSuggestionCommand(editor, "fileMention");
+    if (!suggestion || typeof suggestion.items !== "function") return Promise.resolve([]);
+    function read() {
+      return Promise.resolve(suggestion.items({ query: "", editor: editor })).then(knowledgeItems);
+    }
+    // @ 面板的知识库加载有 300ms 上限，超时先返回空，稍后再取已经回来的结果。
+    return read().then(function (items) {
+      if (items.length) return items;
+      return waitComposer(450).then(read);
+    });
+  }
+
+  function insertComposerItem(editor, kind, item) {
+    var name = kind === "skill" ? "skillMention" : "fileMention";
+    var suggestion = composerSuggestionCommand(editor, name);
+    if (!suggestion) return;
+    try {
+      editor.commands.focus();
+    } catch (err) {
+      return;
+    }
+    var sel = editor.state && editor.state.selection;
+    if (!sel) return;
+    suggestion.command({
+      editor: editor,
+      props: item,
+      range: { from: sel.from, to: sel.to }
+    });
+  }
+
+  function placeComposerPickerPanel(panel, button) {
+    var rect = button.getBoundingClientRect();
+    var left = rect.left;
+    if (left + 280 > window.innerWidth - 8) left = window.innerWidth - 288;
+    if (left < 8) left = 8;
+    panel.style.left = left + "px";
+    panel.style.bottom = (window.innerHeight - rect.top + 6) + "px";
+    panel.style.top = "auto";
+  }
+
+  function closeComposerPicker() {
+    if (!composerPicker) return;
+    if (composerPicker.panel && composerPicker.panel.parentNode) composerPicker.panel.remove();
+    if (composerPicker.button) composerPicker.button.removeAttribute("data-blade-ui-composer-open");
+    composerPicker = null;
+  }
+
+  function renderComposerPicker(panel, editor, kind, items) {
+    while (panel.firstChild) panel.removeChild(panel.firstChild);
+    if (!items.length) {
+      var empty = document.createElement("div");
+      empty.setAttribute("data-blade-ui-composer-picker-status", "empty");
+      empty.textContent = kind === "skill" ? "当前没有可使用的技能" : "当前没有可使用的知识库";
+      panel.appendChild(empty);
+      return;
+    }
+    var i;
+    for (i = 0; i < items.length; i += 1) {
+      (function (item) {
+        var choice = document.createElement("button");
+        choice.type = "button";
+        choice.setAttribute("data-blade-ui-composer-picker-item", kind);
+        var label = kind === "skill"
+          ? (item.displayName || item.skillId || "")
+          : (item.name || "");
+        choice.textContent = label;
+        if (item.description) choice.title = item.description;
+        choice.addEventListener("click", function (event) {
+          event.preventDefault();
+          insertComposerItem(editor, kind, item);
+          closeComposerPicker();
+        });
+        panel.appendChild(choice);
+      })(items[i]);
+    }
+  }
+
+  function openComposerPicker(button, kind) {
+    if (composerPicker && composerPicker.button === button) {
+      closeComposerPicker();
+      return;
+    }
+    closeComposerPicker();
+    var card = button.closest(".home-input-card");
+    var editor = composerEditor(card);
+    if (!editor) return;
+    var panel = document.createElement("div");
+    panel.setAttribute("data-blade-ui-composer-picker-panel", kind);
+    panel.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+    });
+    var status = document.createElement("div");
+    status.setAttribute("data-blade-ui-composer-picker-status", "loading");
+    status.textContent = "正在加载...";
+    panel.appendChild(status);
+    document.body.appendChild(panel);
+    placeComposerPickerPanel(panel, button);
+    button.setAttribute("data-blade-ui-composer-open", "true");
+    var token = { kind: kind, button: button, panel: panel };
+    composerPicker = token;
+    var loader = kind === "skill" ? loadComposerSkills() : loadComposerKnowledge(editor);
+    Promise.resolve(loader).then(function (items) {
+      if (composerPicker !== token) return;
+      renderComposerPicker(panel, editor, kind, items);
+    }).catch(function () {
+      if (composerPicker !== token) return;
+      while (panel.firstChild) panel.removeChild(panel.firstChild);
+      var failed = document.createElement("div");
+      failed.setAttribute("data-blade-ui-composer-picker-status", "error");
+      failed.textContent = kind === "skill" ? "技能列表没有加载出来" : "知识库列表没有加载出来";
+      panel.appendChild(failed);
+    });
+  }
+
+  function bindComposerPicker() {
+    if (composerPickerBound) return;
+    composerPickerBound = true;
+    document.addEventListener("mousedown", function (event) {
+      if (!composerPicker) return;
+      var target = event.target;
+      if (target && composerPicker.panel && composerPicker.panel.contains(target)) return;
+      if (target && composerPicker.button && composerPicker.button.contains(target)) return;
+      closeComposerPicker();
+    }, true);
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") closeComposerPicker();
+    });
+    window.addEventListener("resize", function () {
+      if (!composerPicker) return;
+      placeComposerPickerPanel(composerPicker.panel, composerPicker.button);
+    });
+  }
+
+  function composerPickerButton(kind, label) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("data-blade-ui-composer-picker", kind);
+    button.textContent = label;
+    button.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+    });
+    button.addEventListener("click", function (event) {
+      event.preventDefault();
+      openComposerPicker(button, kind);
+    });
+    return button;
+  }
+
+  function ensureComposerPickers(card) {
+    var add = card.querySelector('button[aria-label="添加内容"]');
+    var host = add && add.parentElement;
+    if (!host || !card.contains(host)) return;
+    var skill = host.querySelector('[data-blade-ui-composer-picker="skill"]');
+    var kb = host.querySelector('[data-blade-ui-composer-picker="kb"]');
+    if (!skill) skill = composerPickerButton("skill", "技能");
+    if (!kb) kb = composerPickerButton("kb", "知识库");
+    if (skill.parentElement !== host) host.appendChild(skill);
+    if (kb.parentElement !== host) host.appendChild(kb);
+    if (kb.previousElementSibling !== skill) host.insertBefore(skill, kb);
+  }
+
+  function placeComposerPickers() {
+    bindComposerPicker();
+    var stale = document.querySelectorAll("[data-blade-ui-composer-trigger]");
+    var i;
+    for (i = stale.length - 1; i >= 0; i -= 1) stale[i].remove();
+    var cards = document.querySelectorAll(".home-input-card");
+    var kept = [];
+    for (i = 0; i < cards.length; i += 1) {
+      var card = cards[i];
+      if (!card.closest("[data-blade-ui-home-stack='true']")) continue;
+      ensureComposerPickers(card);
+      kept.push(card);
+    }
+    var buttons = document.querySelectorAll("[data-blade-ui-composer-picker]");
+    for (i = buttons.length - 1; i >= 0; i -= 1) {
+      var owner = buttons[i].closest(".home-input-card");
+      var stay = false;
+      var j;
+      for (j = 0; j < kept.length; j += 1) {
+        if (kept[j] === owner) stay = true;
+      }
+      if (!stay) buttons[i].remove();
+    }
+    if (composerPicker && !composerPicker.button.isConnected) closeComposerPicker();
+  }
+
   function paint() {
     scheduled = false;
     // 自己的改动不要再排进下一帧。观察器在子节点和 class 上听整棵文档，
     // paint 里换文本或改 class 会立刻再调度，技能页就一直空转。
     if (observer) observer.disconnect();
     try {
+    dismissEmbedOnboarding();
     if (syncOpsNative()) {
       var opsRoot = document.documentElement;
       if (opsRoot) {
@@ -816,6 +1138,8 @@
         opsRoot.removeAttribute("data-blade-ui-factory-home");
         opsRoot.removeAttribute("data-blade-ui-error");
       }
+      hideEmbedRowMenu();
+      notifyEmbedShell();
       return;
     }
     var live = chatIsLive();
@@ -845,9 +1169,11 @@
     }
     markCards();
     markHomeAccent();
+    placeComposerPickers();
     markRailTools();
     placeEmbedSearch();
-    placeEmbedBatchDelete();
+      placeEmbedBatchDelete();
+      placeEmbedRowMenu();
     hideEmbedChatNav();
     hideEmbedLogout();
     hideEmbedThemeToggle();
@@ -895,7 +1221,7 @@
     }
   }
 
-  // 嵌入对话侧栏里的「新建对话」已经排好版时，通知父页面露出标签。只发一次，不改 React 节点。
+  // 嵌入对话侧栏里能看到「新建对话」时通知父页面露出标签，侧栏离开后再通知藏起来。只发状态变化，不改 React 节点。
   function shellParentOrigin() {
     try {
       var params = new URLSearchParams(window.location.search || "");
@@ -927,7 +1253,6 @@
   }
 
   function notifyEmbedShell() {
-    if (embedShellPosted) return;
     var parentWin = null;
     try {
       parentWin = window.parent;
@@ -935,10 +1260,11 @@
       parentWin = null;
     }
     if (!parentWin || parentWin === window) return;
-    if (!embedNewChatVisible()) return;
+    var ready = embedNewChatVisible();
+    if (embedShellReady === ready) return;
     try {
-      parentWin.postMessage({ type: "blade-embed-shell", ready: true }, shellParentOrigin());
-      embedShellPosted = true;
+      parentWin.postMessage({ type: "blade-embed-shell", ready: ready }, shellParentOrigin());
+      embedShellReady = ready;
     } catch (err) {}
   }
 
@@ -980,6 +1306,9 @@
   var removedSessionIds = {};
   var batchScrollBound = false;
   var batchKeyBound = false;
+  var rowMenuRow = null;
+  var rowMenuOpen = false;
+  var rowMenuBound = false;
 
   function usableSessionId(value) {
     return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/.test(value);
@@ -1421,6 +1750,342 @@
     syncBatchChecks(root, history);
     bindBatchScroll();
     bindBatchKeys();
+  }
+
+  // 嵌入态把会话行上的图标收成「⋯」。菜单挂在 body 上插件自己的层里，
+  // 只点击原来的按钮，不把按钮搬进菜单，也不改 React 管的会话节点。
+  function actionName(button) {
+    return ((button && button.getAttribute("aria-label")) || "").replace(/\s+/g, "");
+  }
+
+  function actionCaption(button) {
+    var name = actionName(button);
+    var tip = ((button && button.getAttribute("title")) || "").replace(/\s+/g, "");
+    if (name.indexOf("删除") !== -1) return "删除";
+    if (name.indexOf("修改") !== -1 || name.indexOf("重命名") !== -1) return "重命名";
+    if (name.indexOf("取消置顶") !== -1 || tip.indexOf("取消置顶") !== -1) return "取消置顶";
+    if (name.indexOf("置顶") !== -1) return "置顶";
+    if (name.indexOf("移动") !== -1 || name.indexOf("分组") !== -1) return "分组";
+    if (name.indexOf("分支") !== -1 || name.indexOf("链接") !== -1) return "链接";
+    if (name === "更多" || name === "更多操作" || tip === "更多" || tip === "更多操作") return "更多";
+    return tip || name;
+  }
+
+  function isNativeMoreButton(button) {
+    var name = actionName(button);
+    var tip = ((button && button.getAttribute("title")) || "").replace(/\s+/g, "");
+    return name === "更多" || name === "更多操作" || tip === "更多" || tip === "更多操作";
+  }
+
+  function sessionActionBar(row) {
+    if (!row) return null;
+    var bars = row.querySelectorAll(".hover-row-actions");
+    var i;
+    for (i = 0; i < bars.length; i += 1) {
+      if (String(bars[i].className || "").indexOf("group-create-action") !== -1) continue;
+      return bars[i];
+    }
+    return null;
+  }
+
+  function sessionActionButtons(row) {
+    if (!row || row.querySelector('input[aria-label="编辑对话名称"]')) return [];
+    var bar = sessionActionBar(row);
+    if (!bar) return [];
+    var buttons = bar.querySelectorAll("button");
+    var list = [];
+    var i;
+    for (i = 0; i < buttons.length; i += 1) {
+      var button = buttons[i];
+      if (button.closest("[role='menu'], [role='dialog'], [data-radix-popper-content-wrapper]")) continue;
+      var name = actionName(button);
+      if (!name) continue;
+      var text = (button.textContent || "").replace(/\s+/g, "");
+      if (text && text !== name) continue;
+      list.push(button);
+    }
+    var normal = [];
+    var danger = [];
+    for (i = 0; i < list.length; i += 1) {
+      if (actionName(list[i]).indexOf("删除") !== -1) danger.push(list[i]);
+      else normal.push(list[i]);
+    }
+    return normal.concat(danger);
+  }
+
+  function rowMenuRoot() {
+    var root = document.getElementById("blade-ui-row-menu-root");
+    if (root && root.parentElement !== document.body) root.remove();
+    if (!root || !root.parentElement) {
+      root = document.createElement("div");
+      root.id = "blade-ui-row-menu-root";
+      document.body.appendChild(root);
+    }
+    var more = root.querySelector("[data-blade-ui-row-menu='more']");
+    if (!more) {
+      more = document.createElement("button");
+      more.type = "button";
+      more.setAttribute("data-blade-ui-row-menu", "more");
+      more.setAttribute("aria-label", "更多操作");
+      more.setAttribute("aria-haspopup", "menu");
+      more.setAttribute("aria-expanded", "false");
+      more.textContent = "\u22ef";
+      more.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (rowMenuOpen) closeRowMenu();
+        else openRowMenu();
+      });
+      root.appendChild(more);
+    }
+    var menu = root.querySelector("[data-blade-ui-row-menu='menu']");
+    if (!menu) {
+      menu = document.createElement("div");
+      menu.setAttribute("data-blade-ui-row-menu", "menu");
+      menu.setAttribute("role", "menu");
+      menu.setAttribute("aria-label", "对话操作");
+      menu.addEventListener("click", function (event) {
+        var item = event.target && event.target.closest ? event.target.closest("[data-blade-ui-row-menu='item']") : null;
+        if (!item || item.disabled) return;
+        event.preventDefault();
+        event.stopPropagation();
+        var name = item.getAttribute("data-action") || "";
+        var row = rowMenuRow;
+        closeRowMenu();
+        window.requestAnimationFrame(function () {
+          pressRowAction(row, name);
+        });
+      });
+      root.appendChild(menu);
+    }
+    return root;
+  }
+
+  function pressRowAction(row, name) {
+    if (!row || !row.isConnected || !name) return;
+    var buttons = sessionActionButtons(row);
+    var i;
+    for (i = 0; i < buttons.length; i += 1) {
+      if (actionName(buttons[i]) !== name || buttons[i].disabled) continue;
+      var button = buttons[i];
+      var popup = button.getAttribute("aria-haspopup") || "";
+      if (popup === "menu" || (popup && popup !== "dialog" && (name.indexOf("移动") !== -1 || name.indexOf("删除") !== -1))) {
+        try {
+          button.dispatchEvent(new PointerEvent("pointerdown", {
+            bubbles: true,
+            cancelable: true,
+            pointerId: 1,
+            pointerType: "mouse",
+            button: 0,
+            buttons: 1,
+            isPrimary: true
+          }));
+        } catch (err) {
+          button.click();
+        }
+        return;
+      }
+      button.click();
+      return;
+    }
+  }
+
+  function hideMoreButton() {
+    var root = document.getElementById("blade-ui-row-menu-root");
+    if (!root) return;
+    var more = root.querySelector("[data-blade-ui-row-menu='more']");
+    if (more) more.style.display = "none";
+  }
+
+  function closeRowMenu() {
+    rowMenuOpen = false;
+    var root = document.getElementById("blade-ui-row-menu-root");
+    if (!root) return;
+    var menu = root.querySelector("[data-blade-ui-row-menu='menu']");
+    if (menu) menu.style.display = "none";
+    var more = root.querySelector("[data-blade-ui-row-menu='more']");
+    if (more) more.setAttribute("aria-expanded", "false");
+  }
+
+  function hideEmbedRowMenu() {
+    rowMenuRow = null;
+    closeRowMenu();
+    hideMoreButton();
+    var root = document.getElementById("blade-ui-row-menu-root");
+    if (root) root.style.display = "none";
+    if (document.documentElement) document.documentElement.removeAttribute("data-blade-ui-row-menu");
+  }
+
+  function placeMoreButton(row) {
+    var rect = row.getBoundingClientRect();
+    if (rect.width < 160 || rect.height < 16 || rect.bottom < 8 || rect.top > window.innerHeight - 8) {
+      hideMoreButton();
+      if (!rowMenuOpen) rowMenuRow = null;
+      return;
+    }
+    var root = rowMenuRoot();
+    root.style.display = "block";
+    var more = root.querySelector("[data-blade-ui-row-menu='more']");
+    var size = 28;
+    more.style.display = "grid";
+    more.style.top = Math.round(rect.top + (rect.height - size) / 2) + "px";
+    more.style.left = Math.round(rect.right - size - 8) + "px";
+    if (rowMenuOpen) placeRowMenuPanel(more);
+  }
+
+  function placeRowMenuPanel(more) {
+    var root = rowMenuRoot();
+    var menu = root.querySelector("[data-blade-ui-row-menu='menu']");
+    if (!menu || !more) return;
+    menu.style.display = "flex";
+    var moreRect = more.getBoundingClientRect();
+    var width = menu.offsetWidth || 128;
+    var height = menu.offsetHeight || 40;
+    var side = document.getElementById("unified-shell-sidebar");
+    var sideRect = side ? side.getBoundingClientRect() : null;
+    var left = moreRect.left;
+    if (sideRect && sideRect.width > 160) left = Math.max(left, sideRect.right - 4);
+    if (left + width > window.innerWidth - 8) left = window.innerWidth - 8 - width;
+    if (left < 8) left = 8;
+    var top = moreRect.bottom + 4;
+    if (top + height > window.innerHeight - 8) top = moreRect.top - height - 4;
+    if (top < 8) top = 8;
+    menu.style.top = Math.round(top) + "px";
+    menu.style.left = Math.round(left) + "px";
+  }
+
+  function openRowMenu() {
+    var row = rowMenuRow;
+    if (!row || !row.isConnected) return;
+    var buttons = sessionActionButtons(row);
+    if (!buttons.length) return;
+    var root = rowMenuRoot();
+    var menu = root.querySelector("[data-blade-ui-row-menu='menu']");
+    var more = root.querySelector("[data-blade-ui-row-menu='more']");
+    while (menu.firstChild) menu.removeChild(menu.firstChild);
+    var i;
+    for (i = 0; i < buttons.length; i += 1) {
+      var source = buttons[i];
+      var item = document.createElement("button");
+      item.type = "button";
+      item.setAttribute("role", "menuitem");
+      item.setAttribute("data-blade-ui-row-menu", "item");
+      item.setAttribute("data-action", actionName(source));
+      if (actionName(source).indexOf("删除") !== -1) item.setAttribute("data-danger", "1");
+      item.textContent = actionCaption(source);
+      item.disabled = !!source.disabled;
+      menu.appendChild(item);
+    }
+    rowMenuOpen = true;
+    more.setAttribute("aria-expanded", "true");
+    placeRowMenuPanel(more);
+  }
+
+  function historyHasNativeMore(history) {
+    var rows = sessionRows(history);
+    var seen = 0;
+    var i;
+    var j;
+    for (i = 0; i < rows.length; i += 1) {
+      var buttons = sessionActionButtons(rows[i]);
+      if (!buttons.length) continue;
+      seen += 1;
+      var found = false;
+      for (j = 0; j < buttons.length; j += 1) {
+        if (isNativeMoreButton(buttons[j])) found = true;
+      }
+      if (!found) return false;
+    }
+    return seen > 0;
+  }
+
+  function historyHasRowActions(history) {
+    var rows = sessionRows(history);
+    var i;
+    for (i = 0; i < rows.length; i += 1) {
+      if (sessionActionButtons(rows[i]).length) return true;
+    }
+    return false;
+  }
+
+  function bindRowMenu() {
+    if (rowMenuBound) return;
+    rowMenuBound = true;
+    document.addEventListener("mouseover", function (event) {
+      if (!document.documentElement || document.documentElement.getAttribute("data-blade-ui-row-menu") !== "on") return;
+      var target = event.target;
+      if (!target || !target.closest) return;
+      if (target.closest("#blade-ui-row-menu-root")) return;
+      var row = target.closest('#unified-shell-sidebar section[class*="group/history"] [role="button"][class*="hover-row"]');
+      if (!row || document.documentElement.getAttribute("data-blade-ui-batch") === "on") {
+        if (!rowMenuOpen) {
+          rowMenuRow = null;
+          hideMoreButton();
+        }
+        return;
+      }
+      if (row !== rowMenuRow && rowMenuOpen) closeRowMenu();
+      if (!sessionActionButtons(row).length) {
+        if (!rowMenuOpen) {
+          rowMenuRow = null;
+          hideMoreButton();
+        }
+        return;
+      }
+      rowMenuRow = row;
+      placeMoreButton(row);
+    });
+    document.addEventListener("pointerdown", function (event) {
+      if (!rowMenuOpen) return;
+      var root = document.getElementById("blade-ui-row-menu-root");
+      if (root && event.target && root.contains(event.target)) return;
+      closeRowMenu();
+    }, true);
+    document.addEventListener("keydown", function (event) {
+      if (!rowMenuOpen) return;
+      if (event.key !== "Escape" && event.key !== "Esc") return;
+      event.stopPropagation();
+      closeRowMenu();
+    }, true);
+    window.addEventListener("scroll", function () {
+      if (!rowMenuRow || !rowMenuRow.isConnected) return;
+      if (document.documentElement.getAttribute("data-blade-ui-row-menu") !== "on") return;
+      placeMoreButton(rowMenuRow);
+    }, true);
+  }
+
+  function placeEmbedRowMenu() {
+    if (!document.getElementById("blade-embed-chrome-style")) {
+      hideEmbedRowMenu();
+      return;
+    }
+    var history = visibleHistory();
+    if (!history || !historyHasRowActions(history)) {
+      hideEmbedRowMenu();
+      return;
+    }
+    if (historyHasNativeMore(history)) {
+      hideMoreButton();
+      closeRowMenu();
+      rowMenuRow = null;
+      var nativeRoot = document.getElementById("blade-ui-row-menu-root");
+      if (nativeRoot) nativeRoot.style.display = "none";
+      document.documentElement.setAttribute("data-blade-ui-row-menu", "native");
+      return;
+    }
+    document.documentElement.setAttribute("data-blade-ui-row-menu", "on");
+    bindRowMenu();
+    if (document.documentElement.getAttribute("data-blade-ui-batch") === "on") {
+      closeRowMenu();
+      hideMoreButton();
+      return;
+    }
+    if (rowMenuRow && rowMenuRow.isConnected && history.contains(rowMenuRow)) placeMoreButton(rowMenuRow);
+    else {
+      rowMenuRow = null;
+      closeRowMenu();
+      hideMoreButton();
+    }
   }
 
   function findQueryClient(start) {

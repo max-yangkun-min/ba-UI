@@ -135,7 +135,7 @@ function DetailView({
 
 function portalCatalogDetail(kind: ResourceKind, listTo: string, id: string, detail: ResourceDetail) {
   if (!listTo.startsWith("/resources")) return detail;
-  if (kind === "skills") return { ...detail, category: portalSkillCategory(id, detail.name, `${detail.summary}\n${detail.intro}`) };
+  if (kind === "skills") return { ...detail, category: portalSkillCategory(id, detail.name, `${detail.summary}\n${detail.intro}`, detail.tags) };
   if (kind === "agents") return { ...detail, category: portalAgentCategory(detail.name, `${detail.summary}\n${detail.intro}`, detail.tags) };
   return detail;
 }
@@ -353,18 +353,19 @@ export function AgentPortalDetail({
                   添加
                 </button>
               ) : null}
+              {/* 智能体没有 experienceTopHref，走 detail.experienceUrl 新开页。技能、知识库、工具、插件仍置灰。 */}
               {directUrl ? (
                 <a className="btn" href={directUrl} target="_blank" rel="noopener noreferrer">
                   立即体验
                 </a>
               ) : null}
               {experienceTopHref ? (
-                <a className="btn" href={experienceTopHref} target="_top">
+                <button className="btn" type="button" disabled>
                   立即体验
-                </a>
+                </button>
               ) : null}
               {onExperience ? (
-                <button className="btn" type="button" onClick={onExperience}>
+                <button className="btn" type="button" disabled>
                   立即体验
                 </button>
               ) : null}

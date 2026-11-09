@@ -6,6 +6,7 @@ import { AppDevPage } from "./pages/AppDevPage";
 import { LabAuthProvider } from "./lib/lab-auth";
 import { ChatEmbed } from "./pages/ChatEmbed";
 import { ChatAdmin } from "./pages/ChatAdmin";
+import { ChatGeneralAdmin } from "./pages/ChatGeneralAdmin";
 import { ChatWorkspace } from "./pages/ChatWorkspace";
 import { ConsoleHome } from "./pages/ConsoleHome";
 import { LoginTestPage } from "./pages/LoginTestPage";
@@ -31,6 +32,7 @@ export function App() {
           <Route path="/" element={<HomeEmbed />} />
           <Route path="/chat-workspace" element={<ChatWorkspace />} />
           <Route path="/chat-admin" element={<ChatAdmin />} />
+          <Route path="/chat-general-admin" element={<ChatGeneralAdmin />} />
           <Route path="/resources/prompts" element={<Navigate to="/console/app-dev/prompts" replace />} />
           <Route path="/resources/prompts/*" element={<Navigate to="/console/app-dev/prompts" replace />} />
           <Route path="/resources/*" element={<ShellEmbed />} />

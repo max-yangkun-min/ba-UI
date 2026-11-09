@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-STAGE = "20261105-blade-arm-offline"
+STAGE = "20261107-blade-arm-offline"
 OUT = ROOT / "deliver" / f"{STAGE}.tar.gz"
 BINARY_EXT = {".ttf", ".woff", ".woff2", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".eot", ".zip"}
 JWT = re.compile(br"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")
@@ -77,9 +77,11 @@ def main() -> None:
     shell_text = shell_js.read_text(encoding="utf-8", errors="replace")
     if "__EMBED_ORIGIN__" not in shell_text:
         raise SystemExit("shell bundle is missing the runtime origin")
-    for needle in ("常用排行", "写作沟通", "文档处理"):
+    for needle in ("公文办理", "文字材料", "会议与落实", "研究与资料", "内部管理", "法规政策", "写作沟通", "文档处理"):
         if needle not in embed_text:
             raise SystemExit("embed bundle is missing %s" % needle)
+    if "常用排行" in embed_text:
+        raise SystemExit("embed bundle still has 常用排行")
     for needle in ("智能体创建", "知识库搭建", "技能开发", "MCP工具接入", "提示词模板", "scrolling"):
         if needle not in shell_text:
             raise SystemExit("shell bundle is missing %s" % needle)
@@ -187,7 +189,7 @@ def main() -> None:
             required.append(f"{STAGE}/experts/{expert}/scenario.json")
         ui_ver = tar.extractfile(f"{STAGE}/blade-ui-plugin/VERSION").read().strip()
         iframe_ver = tar.extractfile(f"{STAGE}/blade-iframe-plugin/VERSION").read().strip()
-        if ui_ver != b"0.2.105":
+        if ui_ver != b"0.2.117":
             problems.append("ui version %s" % ui_ver)
         ui_css = tar.extractfile(f"{STAGE}/blade-ui-plugin/files/blade-ui-theme-ba.css").read()
         if b"data-resize-handle" not in ui_css or b"width: 9px" not in ui_css:
@@ -198,7 +200,7 @@ def main() -> None:
         if iframe_ver != b"1.1.29":
             problems.append("iframe version %s" % iframe_ver)
         notes = tar.extractfile(f"{STAGE}/部署说明.md").read().decode("utf-8")
-        for needle in ("20261105-blade-arm-offline", "http://<生产IP>:5173/resources/agents", "http://<生产IP>:5173/console/app-dev/factory", "20261022-skills"):
+        for needle in ("20261107-blade-arm-offline", "http://<生产IP>:5173/resources/agents", "http://<生产IP>:5173/console/app-dev/factory", "20261022-skills"):
             if needle not in notes:
                 problems.append("部署说明 missing " + needle)
         if "import-skills" in notes:

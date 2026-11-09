@@ -48,13 +48,29 @@ function clipsHubBar(src: string) {
   }
 }
 
+function outerOrigin() {
+  try {
+    const hinted = new URLSearchParams(window.location.search).get("embed_parent");
+    if (hinted) return new URL(hinted).origin;
+  } catch {
+    /* 父页面地址不完整时改用引用页 */
+  }
+  try {
+    if (document.referrer) return new URL(document.referrer).origin;
+  } catch {
+    return "*";
+  }
+  return "*";
+}
+
 export function ShellEmbed() {
   const location = useLocation();
   const src = withPortalParent(embedSrc(location.pathname, location.search, location.hash));
   const clip = clipsHubBar(src);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const { session } = useLabAuth();
-  const frameKey = portalEmbedPath(location.pathname) ? "portal" : session?.token || "admin";
+  const portal = portalEmbedPath(location.pathname);
+  const frameKey = portal ? "portal" : session?.token || "admin";
   useEmbedGrant(frameRef, src, location.pathname);
 
   useEffect(() => {
@@ -73,6 +89,16 @@ export function ShellEmbed() {
     const apply = () => {
       frame.setAttribute("scrolling", "no");
       frame.style.overflow = "hidden";
+      if (portal) {
+        if (!(reported > 0)) {
+          frame.style.height = "";
+          delete frame.dataset.embedSize;
+          return;
+        }
+        frame.dataset.embedSize = "grow";
+        frame.style.height = `${Math.ceil(reported)}px`;
+        return;
+      }
       if (!contentMode() || reported < 320) {
         frame.style.height = "";
         delete frame.dataset.embedSize;
@@ -91,22 +117,20 @@ export function ShellEmbed() {
       if (window.parent === window) return;
       const header = document.querySelector(".app-header");
       const chrome = header instanceof HTMLElement ? header.offsetHeight : 0;
-      const content = contentMode();
-      let target = "*";
-      try {
-        if (document.referrer) target = new URL(document.referrer).origin;
-      } catch {
-        target = "*";
-      }
+      const portalGrow = portal && reported > 0;
+      const content = portalGrow || contentMode();
+      const shellBox = document.querySelector(".app-shell");
+      const portalHeight = shellBox instanceof HTMLElement ? shellBox.offsetHeight : reported;
+      const grown = portalGrow ? Math.ceil(portalHeight) : Math.ceil(reported + chrome);
       window.parent.postMessage(
         {
           type: "blade-embed-resize",
           service: "shell",
           mode: content ? "content" : "fill",
           fit: content ? "content" : "viewport",
-          height: content ? Math.ceil(reported + chrome) : 0,
+          height: content ? grown : 0,
         },
-        target,
+        outerOrigin(),
       );
     };
 
@@ -123,7 +147,7 @@ export function ShellEmbed() {
     };
 
     const onResize = () => {
-      if (contentMode()) apply();
+      if (portal || contentMode()) apply();
       postOutward();
     };
 
@@ -134,10 +158,10 @@ export function ShellEmbed() {
       window.removeEventListener("message", onMessage);
       window.removeEventListener("resize", onResize);
     };
-  }, [src, clip, frameKey]);
+  }, [src, clip, frameKey, portal]);
 
   return (
-    <div className={clip ? "shell-embed shell-embed-clip" : "shell-embed"}>
+    <div className={clip ? "shell-embed shell-embed-clip" : "shell-embed"} data-portal-flow={portal ? "1" : undefined}>
       <iframe key={frameKey} ref={frameRef} className="shell-embed-frame" title="嵌入页" src={src} scrolling="no" />
     </div>
   );

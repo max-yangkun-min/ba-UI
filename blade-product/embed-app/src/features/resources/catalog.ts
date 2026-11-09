@@ -70,7 +70,8 @@ async function loadSkills(): Promise<CatalogResult> {
 }
 
 async function loadKnowledge(): Promise<CatalogResult> {
-  const data = await fetchJson("/api-ba/api/registry/kb");
+  // 门户列表只留市场上架库。scope 缺省是 default，会带出超级管理员自己的私有库。
+  const data = await fetchJson("/api-ba/api/registry/kb?scope=market");
   const rows = Array.isArray(data) ? data : asArray(asRecord(data)?.items);
   return {
     items: rows.map((item, index) => {

@@ -1,5 +1,13 @@
-/* blade-ui-plugin 0.2.105 — Blade Agent
+/* blade-ui-plugin 0.2.114 — Blade Agent
  * 对齐《UI界面设计规范》V1.0.4：颜色、字号、导航行、按钮、输入、表格、卡片、弹层。
+ * 0.2.114 对话首页输入栏改为「技能」「知识库」。点开直接列出可选项，占位符恢复产品原文。
+ * 0.2.112 对话主列贴到右缘。问候页（含市场卡片带回的 ?kb=）保持 680px 居中窄栏。
+ * 知识库不再改外壳 flex，避免侧栏把空档吃掉；详情里的 max-w 仍放开。
+ * 0.2.111 撤回知识库市场/我的库的拉长卡片。三列恢复原样，一张卡不再铺满整行。点进卡片后的详情仍贴齐主列右缘。
+ * 0.2.110 嵌入对话侧栏离开后通知父页面藏起「AI对话」等标签，回到对话再露出。不改 React 节点。
+ * 0.2.109 技能开发会话只藏最上面那条蓝条（技能开发、连接状态、账号、返回主页）。编辑区的发布按钮保持一行。
+ * 0.2.107 嵌入态关掉「先让 Blade AI 更懂你」。只点这个对话框里的「稍后再说」，产品和遮罩一起卸掉。
+ * 0.2.106 嵌入态悬停一条对话只留「⋯」。点开再看到对话分支、分组、置顶、重命名，删除在最下面。
  * 0.2.105 嵌入态侧栏底部整块账号栏（头像、管理员、三个点）藏掉。
  * 0.2.62 技能目录外壳锁在窗口高度内，只让技能主区滚动。
  * 颜色变量是 HSL。
@@ -1177,6 +1185,85 @@ html:not([data-blade-ui-chat="live"]) .home-input-card .ProseMirror {
   color: #323233 !important;
 }
 
+html:not([data-blade-ui-chat="live"]) .home-input-card button[data-blade-ui-composer-picker] {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 8px !important;
+  border: 0 !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #646566 !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  line-height: 20px !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+}
+
+html:not([data-blade-ui-chat="live"]) .home-input-card button[data-blade-ui-composer-picker]:hover,
+html:not([data-blade-ui-chat="live"]) .home-input-card button[data-blade-ui-composer-picker][data-blade-ui-composer-open="true"] {
+  background: #f5f7fa !important;
+  color: #237cff !important;
+}
+
+[data-blade-ui-composer-picker-panel] {
+  position: fixed !important;
+  z-index: 80 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  width: 280px !important;
+  max-height: 280px !important;
+  margin: 0 !important;
+  padding: 4px !important;
+  overflow: auto !important;
+  border: 1px solid #dcdfe6 !important;
+  border-radius: 4px !important;
+  background: #ffffff !important;
+  box-shadow: 0 4px 16px rgba(50, 50, 51, 0.12) !important;
+}
+
+[data-blade-ui-composer-picker-panel] [data-blade-ui-composer-picker-status] {
+  padding: 8px 10px !important;
+  color: #969799 !important;
+  font-size: 13px !important;
+  line-height: 20px !important;
+}
+
+[data-blade-ui-composer-picker-panel] button[data-blade-ui-composer-picker-item] {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 32px !important;
+  margin: 0 !important;
+  padding: 6px 10px !important;
+  border: 0 !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #323233 !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  line-height: 20px !important;
+  text-align: left !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  cursor: pointer !important;
+}
+
+[data-blade-ui-composer-picker-panel] button[data-blade-ui-composer-picker-item]:hover {
+  background: #f5f7fa !important;
+  color: #237cff !important;
+}
+
 html:not([data-blade-ui-chat="live"]) .home-input-card > div.flex.items-center.justify-between {
   padding: 0 4px 4px !important;
   gap: 8px !important;
@@ -1445,8 +1532,10 @@ div[class*="border-[hsl(var(--ring)/0.6)]"] {
   color: #237cff !important;
 }
 
-/* 进行中的对话主列恢复 Blade 自己的颜色、圆角和字体。右侧工作空间不在这一列里。 */
-[data-blade-ui-chat-column="true"] {
+/* 进行中的对话主列恢复 Blade 自己的颜色、圆角和字体。右侧工作空间不在这一列里。
+   0.2.112 外壳 #unified-shell-main 不吃 all:revert-layer。那会把分栏 flex 打回 0 1 auto，
+   主列缩成输入框宽度，右边留下一整块空壳。 */
+[data-blade-ui-chat-column="true"]:not(#unified-shell-main) {
   all: revert-layer !important;
   --background: 0 0% 97% !important;
   --card: 0 0% 98% !important;
@@ -1894,8 +1983,13 @@ aside[class*="group/rail"]:has(#factory-sidebar-projects-heading) [class~="bg-si
 }
 
 /* 技能开发页沿用同一套浅灰底、白卡片、主色和标题。
-   只藏红框那条：图标、技能开发、版本、返回主页。下面的技能编辑器标题和编辑区留下。 */
+   目录页那条是 .studio 下的 div.h-14。会话页那条蓝条是 header.bg-header-bg：
+   左边「技能开发」，右边连接状态、账号和「返回主页」。只藏这两条，编辑区留下。 */
 html[data-blade-ui-page="skill-editor"] .studio > div.h-14:has(a[aria-label="返回 Blade Agent 主页"]) {
+  display: none !important;
+}
+
+html[data-blade-ui-page="skill-editor"] header.bg-header-bg.h-14:has(a[title="技能开发"]):has(a[aria-label="返回 Blade Agent 主页"]) {
   display: none !important;
 }
 html[data-blade-ui-page="skill-editor"] body,
@@ -2042,6 +2136,23 @@ html[data-blade-ui-page="skill-editor"] header button[class*="rounded-md"] {
   background: #237cff !important;
   color: #ffffff !important;
   font-size: 14px !important;
+}
+
+/* 左栏很窄时，「发布」会被压到一个字宽，两个字上下叠。只放开这一颗，图标和文字同一行。 */
+html[data-blade-ui-page="skill-editor"] header button.flex.items-center[class*="gap-1.5"][class*="text-xs"][class*="rounded-md"] {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  flex: 0 0 auto !important;
+  width: max-content !important;
+  min-width: max-content !important;
+  max-width: none !important;
+  white-space: nowrap !important;
+  writing-mode: horizontal-tb !important;
+}
+
+html[data-blade-ui-page="skill-editor"] header button.flex.items-center[class*="gap-1.5"][class*="text-xs"][class*="rounded-md"] svg {
+  flex: none !important;
 }
 
 html[data-blade-ui-page="skill-editor"] div.flex.h-full.min-h-0.flex-col[class*="bg-[hsl(var(--background))]"],
@@ -2922,16 +3033,13 @@ html:has(#blade-embed-chrome-style) #unified-shell-sidebar:not(:has(#factory-sid
   color: #646566 !important;
 }
 
-/* 0.2.94 知识库主列是 main 下面的 max-w-5xl（64rem，扣掉左右内边距后卡片大约 960px）。
-   控制台侧栏右边还有大片空白。只放开这一列，对话侧栏的 240px 不动。 */
-html[data-blade-ui-page="knowledge"] #unified-shell-main {
-  flex: 1 1 auto !important;
-  width: auto !important;
-  max-width: none !important;
-  min-width: 0 !important;
-}
-
-html[data-blade-ui-page="knowledge"] main > [class*="max-w-"] {
+/* 0.2.94 知识库主列是 main 下面的 max-w-5xl（64rem）。
+   0.2.111 这列只服务点进卡片之后的详情：文档区贴齐主列右缘。
+   0.2.112 不再改 #unified-shell-main 的 flex。外壳 flex-grow 被改成 1 之后，
+   侧栏那份 14.6 会把空档吃掉，主列被挤窄。市场和我的库的卡片网格不改列宽。
+   对话输入的 680px 窄栏不套。对话侧栏的 240px 不动。 */
+html[data-blade-ui-page="knowledge"] main > [class*="max-w-"]:has(a[aria-label="返回知识库列表"]),
+html[data-blade-ui-page="knowledge"] main > [class*="max-w-"]:has(table) {
   width: 100% !important;
   max-width: none !important;
   margin-left: 0 !important;
@@ -3102,3 +3210,118 @@ html:has(#blade-embed-chrome-style) div:has(> #init-script) {
   outline: none !important;
   box-shadow: none !important;
 }
+
+/* 0.2.106 嵌入态会话行：悬停不再铺开分支、分组、置顶、重命名和删除。
+   只藏这排图标，不藏会话行本身。找不到这排按钮时不打 data-blade-ui-row-menu，图标保持原样。
+   「⋯」和菜单在 #blade-ui-row-menu-root，不进 React 节点。Blade 若自带「更多」，只留那一个。 */
+html:has(#blade-embed-chrome-style)[data-blade-ui-row-menu="on"] #unified-shell-sidebar section[class*="group/history"] [role="button"][class*="hover-row"] .hover-row-actions:not(.group-create-action) {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+html:has(#blade-embed-chrome-style)[data-blade-ui-row-menu="native"] #unified-shell-sidebar section[class*="group/history"] [role="button"][class*="hover-row"] .hover-row-actions:not(.group-create-action) button:not([aria-label="更多"]):not([aria-label="更多操作"]):not([title="更多"]):not([title="更多操作"]) {
+  display: none !important;
+}
+
+#blade-ui-row-menu-root {
+  position: fixed;
+  inset: 0;
+  z-index: 46;
+  pointer-events: none;
+  background: transparent;
+}
+
+#blade-ui-row-menu-root [data-blade-ui-row-menu="more"] {
+  position: fixed;
+  pointer-events: auto;
+  display: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #646566;
+  box-shadow: none;
+  font-family: "Microsoft YaHei", "微软雅黑", "PingFang SC", "Noto Sans SC", sans-serif;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#blade-ui-row-menu-root [data-blade-ui-row-menu="more"]:hover,
+#blade-ui-row-menu-root [data-blade-ui-row-menu="more"][aria-expanded="true"] {
+  background: #f5f7fa;
+  color: #323233;
+}
+
+#blade-ui-row-menu-root [data-blade-ui-row-menu="more"]:focus-visible {
+  outline: 1px solid #237cff;
+  outline-offset: 1px;
+}
+
+#blade-ui-row-menu-root [data-blade-ui-row-menu="menu"] {
+  position: fixed;
+  pointer-events: auto;
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 128px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid #e8ecf3;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(50, 50, 51, 0.08);
+}
+
+#blade-ui-row-menu-root [data-blade-ui-row-menu="item"] {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
+  margin: 0;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #323233;
+  font-family: "Microsoft YaHei", "微软雅黑", "PingFang SC", "Noto Sans SC", sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  text-align: left;
+  cursor: pointer;
+}
+
+#blade-ui-row-menu-root [data-blade-ui-row-menu="item"]:hover:not(:disabled) {
+  background: #f5f7fa;
+}
+
+#blade-ui-row-menu-root [data-blade-ui-row-menu="item"]:focus-visible {
+  outline: 1px solid #237cff;
+  outline-offset: -1px;
+}
+
+#blade-ui-row-menu-root [data-blade-ui-row-menu="item"]:disabled {
+  color: #c8c9cc;
+  cursor: default;
+}
+
+#blade-ui-row-menu-root [data-blade-ui-row-menu="item"][data-danger="1"] {
+  margin-top: 4px;
+  border-top: 1px solid #e8ecf3;
+  border-radius: 0 0 4px 4px;
+  color: #d94a4a;
+}
+
+#blade-ui-row-menu-root [data-blade-ui-row-menu="item"][data-danger="1"]:hover:not(:disabled) {
+  background: rgba(217, 74, 74, 0.08);
+  color: #c94040;
+}
+
+/* 0.2.117 历史对话列表滚动条不再覆盖，沿用 Blade 自带 hover-scrollbar 细条。 */

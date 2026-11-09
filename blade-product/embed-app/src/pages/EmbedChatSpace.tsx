@@ -28,19 +28,33 @@ function SpaceTab({ label, href }: { label: string; href: string }) {
   );
 }
 
-/** 首页一个标签，开发页两个，管理页三个。AI对话仍是当前嵌入页里的 Blade 对话。标签和内层侧栏一起出现。 */
-export function EmbedChatSpace({ mode }: { mode: "chat" | "workspace" | "admin" }) {
+type ChatSpaceMode = "chat" | "workspace" | "admin" | "general-admin";
+
+function spaceLinks(mode: ChatSpaceMode, urls: { dev: string; admin: string }) {
+  if (mode === "workspace") return [{ label: "开发空间", href: urls.dev }];
+  if (mode === "admin") {
+    return [
+      { label: "开发空间", href: urls.dev },
+      { label: "管理空间", href: urls.admin },
+    ];
+  }
+  if (mode === "general-admin") return [{ label: "管理空间", href: urls.admin }];
+  return [];
+}
+
+function spaceTitle(mode: ChatSpaceMode) {
+  if (mode === "admin") return "管理 · 智能模型公共服务平台";
+  if (mode === "general-admin") return "普通管理 · 智能模型公共服务平台";
+  return "对话 · 智能模型公共服务平台";
+}
+
+/** 首页一个标签，开发页两个，管理页三个，普通管理两个（AI对话、管理空间）。AI对话仍是当前嵌入页里的 Blade 对话。标签只在内层还是对话侧栏时出现。 */
+export function EmbedChatSpace({ mode }: { mode: ChatSpaceMode }) {
   const urls = useSpaceUrls();
-  const links =
-    mode === "chat"
-      ? []
-      : [
-          { label: "开发空间", href: urls.dev },
-          ...(mode === "admin" ? [{ label: "管理空间", href: urls.admin }] : []),
-        ];
+  const links = spaceLinks(mode, urls);
 
   useEffect(() => {
-    document.title = mode === "admin" ? "管理 · 智能模型公共服务平台" : "对话 · 智能模型公共服务平台";
+    document.title = spaceTitle(mode);
   }, [mode]);
 
   return (

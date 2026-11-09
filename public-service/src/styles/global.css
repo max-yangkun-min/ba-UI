@@ -72,10 +72,29 @@ html:not(.is-embedded):has(.shell-embed-frame[data-embed-size="grow"]) #root {
   overflow: visible;
 }
 
+/* 门户目录跟着内容变高，短内容不再把壳撑满一屏，页脚才能贴在内容后面。 */
+html:not(.is-embedded):has(.shell-embed[data-portal-flow="1"] .shell-embed-frame[data-embed-size="grow"]),
+html:not(.is-embedded):has(.shell-embed[data-portal-flow="1"] .shell-embed-frame[data-embed-size="grow"]) body,
+html:not(.is-embedded):has(.shell-embed[data-portal-flow="1"] .shell-embed-frame[data-embed-size="grow"]) #root,
+.app-shell:has(.shell-embed[data-portal-flow="1"] .shell-embed-frame[data-embed-size="grow"]) {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+
 html.is-embedded .app-shell {
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+html.is-embedded:has(.shell-embed[data-portal-flow="1"] .shell-embed-frame[data-embed-size="grow"]),
+html.is-embedded:has(.shell-embed[data-portal-flow="1"] .shell-embed-frame[data-embed-size="grow"]) body,
+html.is-embedded:has(.shell-embed[data-portal-flow="1"] .shell-embed-frame[data-embed-size="grow"]) #root,
+html.is-embedded:has(.shell-embed[data-portal-flow="1"] .shell-embed-frame[data-embed-size="grow"]) .app-shell {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
 }
 
 html.is-embedded .dialog {

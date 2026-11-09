@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Icon } from "../../components/Icon";
+import { OfficeFacetNav } from "./OfficeFacetNav";
+import { officeGroups, type OfficeGroup } from "./office-taxonomy";
 
 const PAGE_SIZE = 12;
 
@@ -8,6 +10,8 @@ export type PortalCard = {
   name: string;
   desc: string;
   category: string;
+  /** 左侧二级分类。技能页、知识库页筛选用，其它目录留空。 */
+  officeItemIds?: string[];
   status: string;
   owner: string;
   tags: string[];
@@ -42,6 +46,9 @@ export function PortalCatalog({
   onOpen,
   toolbar,
   searchPlaceholder,
+  officeFacet = false,
+  facetGroups,
+  hideCardStatus = false,
 }: {
   title: string;
   noun: string;
@@ -53,11 +60,21 @@ export function PortalCatalog({
   onOpen: (item: PortalCard) => void;
   toolbar?: ReactNode;
   searchPlaceholder?: string;
+  /** 左侧改用机关单位五组分类，和智能体页同一套。 */
+  officeFacet?: boolean;
+  /** 知识库左侧分组。传入后走同一套白卡片导航，不用智能体那五组。 */
+  facetGroups?: OfficeGroup[];
+  /** 卡片标题右侧的状态不显示。技能页隐「已安装 / 未安装」，工具页隐「MCP · 检测通过」这类。 */
+  hideCardStatus?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<Partial<Record<FilterKey, string>>>({});
+  const [officePicked, setOfficePicked] = useState<Record<string, string>>({});
+  const [folded, setFolded] = useState<Record<string, boolean>>({});
   const [sort, setSort] = useState<SortKey>("latest");
   const [page, setPage] = useState(1);
+  const sideGroups = facetGroups ?? officeGroups;
+  const sideFacet = officeFacet || facetGroups != null;
 
   const groups = useMemo(() => {
     return facets
@@ -71,19 +88,33 @@ export function PortalCatalog({
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
     const list = items.filter((item) => {
-      for (const facet of facets) {
-        const value = picked[facet.key];
-        if (value && item[facet.key] !== value) return false;
+      if (sideFacet) {
+        const ids = item.officeItemIds ?? [];
+        for (const group of sideGroups) {
+          const selected = officePicked[group.id];
+          if (selected && !ids.includes(selected)) return false;
+        }
+      } else {
+        for (const facet of facets) {
+          const value = picked[facet.key];
+          if (value && item[facet.key] !== value) return false;
+        }
       }
       if (!text) return true;
-      return [item.name, item.desc, item.category, item.status, item.owner, ...item.tags].join(" ").toLowerCase().includes(text);
+      const officeText = sideFacet
+        ? (item.officeItemIds ?? []).flatMap((id) => {
+            const group = sideGroups.find((entry) => entry.items.some((option) => option.id === id));
+            return [facetItemName(sideGroups, id), group?.name ?? ""];
+          })
+        : [];
+      return [item.name, item.desc, item.category, item.status, item.owner, ...officeText, ...item.tags].join(" ").toLowerCase().includes(text);
     });
     const next = [...list];
     if (sort === "name") next.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
     else if (sort === "hot") next.sort((a, b) => (b.hot ?? -1) - (a.hot ?? -1));
     else next.sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
     return next;
-  }, [items, picked, query, sort]);
+  }, [items, officePicked, picked, query, sideFacet, sideGroups, sort]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -92,7 +123,7 @@ export function PortalCatalog({
 
   useEffect(() => {
     setPage(1);
-  }, [query, picked, sort, items]);
+  }, [query, picked, officePicked, sort, items]);
 
   const rangeText = filtered.length === 0 ? "0" : `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filtered.length)}`;
   const sortCaption = sort === "hot" ? "按用量排序" : sort === "latest" ? "按更新时间排序" : "按名称排序";
@@ -101,7 +132,25 @@ export function PortalCatalog({
     <div className="agent-catalog">
       <h1 className="agent-catalog-heading">{title}</h1>
       <div className="agent-catalog-frame">
-        <div className="agent-catalog-layout">
+        <div className={sideFacet ? "agent-catalog-stage" : "agent-catalog-layout"}>
+          {sideFacet ? (
+            <div className="agent-cat-side">
+              <OfficeFacetNav
+                groups={facetGroups}
+                picked={officePicked}
+                folded={folded}
+                onFold={(groupId, open) => setFolded((prev) => ({ ...prev, [groupId]: open }))}
+                onPick={(groupId, itemId) => {
+                  setOfficePicked((prev) => {
+                    const next = { ...prev };
+                    if (!itemId) delete next[groupId];
+                    else next[groupId] = itemId;
+                    return next;
+                  });
+                }}
+              />
+            </div>
+          ) : (
           <aside className="agent-catalog-side" aria-label="资源筛选">
             {groups.map((group) => (
               <details className="agent-facet" key={group.key} open>
@@ -127,6 +176,7 @@ export function PortalCatalog({
               </details>
             ))}
           </aside>
+          )}
           <div className="agent-catalog-main">
             <div className="agent-search">
               <div className="agent-search-field">
@@ -145,7 +195,7 @@ export function PortalCatalog({
                 共 <strong className="num">{phase === "ready" ? filtered.length : 0}</strong> 个{noun}
               </div>
             </div>
-            {selections.length > 0 ? (
+            {!sideFacet && selections.length > 0 ? (
               <div className="agent-selected">
                 <span>已选条件</span>
                 {selections.map((item) => (
@@ -186,16 +236,17 @@ export function PortalCatalog({
             {phase === "ready" && filtered.length === 0 ? (
               <div className="agent-catalog-empty">
                 没有符合条件的{noun}
-                <p>{items.length === 0 ? emptyText : "试试其他关键词，或清空筛选条件。"}</p>
+                <p>{items.length === 0 ? emptyText : sideFacet ? "试试其他关键词，或改回全部分类。" : "试试其他关键词，或清空筛选条件。"}</p>
                 {items.length > 0 ? (
                   <button
                     type="button"
                     onClick={() => {
                       setPicked({});
+                      setOfficePicked({});
                       setQuery("");
                     }}
                   >
-                    重置搜索与筛选
+                    {sideFacet ? "重置搜索与分类" : "重置搜索与筛选"}
                   </button>
                 ) : null}
               </div>
@@ -235,11 +286,26 @@ export function PortalCatalog({
                       >
                         查看
                       </button>
-                      {item.status ? <span className="agent-card-status">{item.status}</span> : null}
+                      {item.status && !hideCardStatus && !(officeFacet && item.status === "可添加") ? <span className="agent-card-status">{item.status}</span> : null}
                     </div>
                     <p className="agent-card-desc">{item.desc || "暂无"}</p>
                     <div className="agent-card-tags">
-                      {item.category ? (
+                      {sideFacet
+                        ? (item.officeItemIds ?? []).map((itemId) => (
+                            <button
+                              className="agent-card-tag"
+                              key={itemId}
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                const group = sideGroups.find((entry) => entry.items.some((option) => option.id === itemId));
+                                if (group) setOfficePicked({ [group.id]: itemId });
+                              }}
+                            >
+                              {facetItemName(sideGroups, itemId)}
+                            </button>
+                          ))
+                        : item.category ? (
                         <button
                           className="agent-card-tag"
                           type="button"
@@ -252,7 +318,7 @@ export function PortalCatalog({
                         </button>
                       ) : null}
                       {item.tags
-                        .filter((tag) => tag && tag !== item.category && tag !== item.status)
+                        .filter((tag) => tag && tag !== item.category && tag !== item.status && !(item.officeItemIds ?? []).some((itemId) => facetItemName(sideGroups, itemId) === tag))
                         .slice(0, 3)
                         .map((tag) => (
                           <span className="agent-card-tag" key={tag}>
@@ -298,4 +364,12 @@ export function PortalCatalog({
       </div>
     </div>
   );
+}
+
+function facetItemName(groups: OfficeGroup[], itemId: string) {
+  for (const group of groups) {
+    const found = group.items.find((item) => item.id === itemId);
+    if (found) return found.name;
+  }
+  return "";
 }

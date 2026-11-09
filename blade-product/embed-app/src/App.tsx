@@ -27,6 +27,7 @@ export function App() {
           <Route path="/" element={<UserAuthGate><HomePage /></UserAuthGate>} />
           <Route path="/chat-workspace" element={<UserAuthGate><EmbedChatSpace mode="workspace" /></UserAuthGate>} />
           <Route path="/chat-admin" element={<UserAuthGate><EmbedChatSpace mode="admin" /></UserAuthGate>} />
+          <Route path="/chat-general-admin" element={<UserAuthGate><EmbedChatSpace mode="general-admin" /></UserAuthGate>} />
           <Route path="/resources/skills" element={<ResourceCatalogPage kind="skills" />} />
           <Route path="/resources/knowledge" element={<ResourceCatalogPage kind="knowledge" />} />
           <Route path="/resources/agents" element={<MockAgentCatalog />} />

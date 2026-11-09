@@ -1,4 +1,5 @@
-/* 嵌入页上的对话标签。首页一个，开发页两个，管理页三个。
+/* 嵌入页上的对话标签。首页一个，开发页和普通管理页两个，管理页三个。
+   普通管理是 AI对话 + 管理空间，列数与开发页相同，走默认两列。
    标签只占左列顶上 65px，和 BaEmbed 的 space_tabs、内层侧栏 padding-top 同一高度。
    不要再给标签单独一行，否则右边主内容会被整页下压。 */
 .embed-app > .embed-chat-space {
@@ -55,9 +56,11 @@
   background: transparent;
 }
 
-/* 地址已经在请求。标签先藏住，和内层侧栏同一时刻再出现，避免单独悬在空白页上。 */
+/* 地址已经在请求，或内层已经不是对话侧栏。标签和左列白底一起藏住，画面本身留着。 */
 .embed-chat-space:has(.ba-frame[data-quiet="1"]) .embed-chat-space-head,
-.embed-chat-space:has(.ba-frame[data-quiet="1"])::before {
+.embed-chat-space:has(.ba-frame[data-quiet="1"])::before,
+.embed-chat-space:has(.ba-frame[data-shell="0"]) .embed-chat-space-head,
+.embed-chat-space:has(.ba-frame[data-shell="0"])::before {
   visibility: hidden;
 }
 

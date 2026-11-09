@@ -4,7 +4,9 @@ import { findResourceNav, type ResourceKind } from "../data/resource-nav";
 import { emptyCatalogCopy, loadCatalog, type CatalogCard } from "../features/resources/catalog";
 import { resourceDetailPath, withSkillQuery } from "../features/resources/detail";
 import { PortalCatalog, type PortalCard } from "../features/resources/PortalCatalog";
-import { portalSkillCategory } from "../features/resources/skill-categories";
+import { knowledgeGroups, knowledgeItemName, matchKnowledgeItems } from "../features/resources/knowledge-taxonomy";
+import { officeItemName } from "../features/resources/office-taxonomy";
+import { matchSkillOfficeItems } from "../features/resources/skill-categories";
 import { ResourceBoard, type BoardFilter, type BoardItem } from "../features/resources/ResourceBoard";
 import { formatStatNumber } from "../features/resources/stats";
 
@@ -82,6 +84,9 @@ export function ResourceCatalogPage({
         error={error}
         emptyText={emptyCatalogCopy(kind)}
         items={items.map((item) => toPortalCard(item, kind))}
+        officeFacet={kind === "skills"}
+        facetGroups={kind === "knowledge" ? knowledgeGroups : undefined}
+        hideCardStatus={kind === "skills" || kind === "tools" || kind === "plugins" || kind === "knowledge"}
         searchPlaceholder={`搜索${noun}名称、描述、分类...`}
         onOpen={(item) => navigate(openPath(kind, item))}
       />
@@ -116,12 +121,24 @@ function openPath(kind: ResourceKind, item: { id: string; name?: string; status?
 }
 
 function toPortalCard(item: CatalogCard, kind: ResourceKind): PortalCard {
-  const category = kind === "skills" ? portalSkillCategory(item.id, item.name, item.description ?? "") : (item.category ?? "");
+  const officeItemIds =
+    kind === "skills"
+      ? matchSkillOfficeItems(item.id, item.name, item.description ?? "", item.tags ?? [])
+      : kind === "knowledge"
+        ? matchKnowledgeItems(item.name, item.description ?? "", item.tags ?? [])
+        : [];
+  const category =
+    kind === "skills"
+      ? officeItemIds.map((id) => officeItemName(id)).filter(Boolean).join("、")
+      : kind === "knowledge"
+        ? officeItemIds.map((id) => knowledgeItemName(id)).filter(Boolean).join("、")
+        : (item.category ?? "");
   return {
     id: item.id,
     name: item.name,
     desc: item.description ?? "",
     category,
+    officeItemIds,
     status: item.status ?? "",
     owner: "",
     tags: item.tags ?? [],

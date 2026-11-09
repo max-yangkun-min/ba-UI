@@ -65,7 +65,7 @@ html.is-embedded .embed-app {
   overflow: hidden;
 }
 
-/* 目录和详情锁在 iframe 视口里，由页面自己滚动。外层 iframe 固定高度且 scrolling=no 时，滚动条仍在文档内部。 */
+/* 门户目录按内容撑高，纵向交给外层滚动。横向仍裁掉，避免分类列被挤出视口。 */
 html.is-embedded:has(.resource-page),
 html.is-embedded:has(.agent-catalog),
 html.is-embedded:has(.agent-portal-detail),
@@ -78,53 +78,31 @@ html.is-embedded:has(.resource-page) #root,
 html.is-embedded:has(.agent-catalog) #root,
 html.is-embedded:has(.agent-portal-detail) #root,
 html.is-embedded:has(.detail-page) #root {
-  height: 100%;
+  height: auto;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 html.is-embedded:has(.resource-page) .embed-app,
 html.is-embedded:has(.agent-catalog) .embed-app,
 html.is-embedded:has(.agent-portal-detail) .embed-app,
 html.is-embedded:has(.detail-page) .embed-app {
-  height: 100%;
+  height: auto;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 html.is-embedded .resource-page,
 html.is-embedded .agent-catalog,
 html.is-embedded .agent-portal-detail,
 html.is-embedded .detail-page {
-  flex: 1 1 auto;
-  height: 0;
+  flex: none;
+  height: auto;
   min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-width: auto;
-  scrollbar-color: #5c6570 #e6ebf2;
-}
-
-html.is-embedded .resource-page::-webkit-scrollbar,
-html.is-embedded .agent-catalog::-webkit-scrollbar,
-html.is-embedded .agent-portal-detail::-webkit-scrollbar,
-html.is-embedded .detail-page::-webkit-scrollbar {
-  width: 12px;
-}
-
-html.is-embedded .resource-page::-webkit-scrollbar-thumb,
-html.is-embedded .agent-catalog::-webkit-scrollbar-thumb,
-html.is-embedded .agent-portal-detail::-webkit-scrollbar-thumb,
-html.is-embedded .detail-page::-webkit-scrollbar-thumb {
-  background: #5c6570;
-  border-radius: 6px;
-}
-
-html.is-embedded .resource-page::-webkit-scrollbar-track,
-html.is-embedded .agent-catalog::-webkit-scrollbar-track,
-html.is-embedded .agent-portal-detail::-webkit-scrollbar-track,
-html.is-embedded .detail-page::-webkit-scrollbar-track {
-  background: #e6ebf2;
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 /* 子 iframe 被拉高、而本页视口仍被外层卡住时，由 embed-app 滚动。对话页没有这个标记，仍铺满视口。 */
@@ -165,6 +143,29 @@ html.is-embedded:has(.ba-frame[data-embed-size="grow"]) .embed-app::-webkit-scro
 
 html.is-embedded:has(.ba-frame[data-embed-size="grow"]) .embed-app::-webkit-scrollbar-track {
   background: #e6ebf2;
+}
+
+/* 门户目录优先于内层工作台的视口滚动，避免页脚被钉住时目录再出一条纵向滚动条。 */
+html.is-embedded:has(.embed-app):has(.resource-page),
+html.is-embedded:has(.embed-app):has(.agent-catalog),
+html.is-embedded:has(.embed-app):has(.agent-portal-detail),
+html.is-embedded:has(.embed-app):has(.detail-page),
+html.is-embedded:has(.embed-app):has(.resource-page) body,
+html.is-embedded:has(.embed-app):has(.agent-catalog) body,
+html.is-embedded:has(.embed-app):has(.agent-portal-detail) body,
+html.is-embedded:has(.embed-app):has(.detail-page) body,
+html.is-embedded:has(.embed-app):has(.resource-page) #root,
+html.is-embedded:has(.embed-app):has(.agent-catalog) #root,
+html.is-embedded:has(.embed-app):has(.agent-portal-detail) #root,
+html.is-embedded:has(.embed-app):has(.detail-page) #root,
+html.is-embedded:has(.embed-app):has(.resource-page) .embed-app,
+html.is-embedded:has(.embed-app):has(.agent-catalog) .embed-app,
+html.is-embedded:has(.embed-app):has(.agent-portal-detail) .embed-app,
+html.is-embedded:has(.embed-app):has(.detail-page) .embed-app {
+  height: auto;
+  min-height: 0;
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 html.is-embedded .agent-facet-options {

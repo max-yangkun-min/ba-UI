@@ -223,6 +223,13 @@ html.is-embedded .shell-embed:has(.shell-embed-frame[data-embed-size="grow"]) {
   scrollbar-color: #5c6570 #e6ebf2;
 }
 
+html.is-embedded .shell-embed[data-portal-flow="1"]:has(.shell-embed-frame[data-embed-size="grow"]) {
+  flex: none;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+
 html.is-embedded .shell-embed:has(.shell-embed-frame[data-embed-size="grow"])::-webkit-scrollbar {
   width: 12px;
 }
@@ -257,6 +264,11 @@ html.is-embedded .shell-embed:has(.shell-embed-frame[data-embed-size="grow"])::-
   max-width: none;
   min-height: 100%;
   overflow: hidden;
+}
+
+.shell-embed[data-portal-flow="1"] > .shell-embed-frame[data-embed-size="grow"] {
+  min-height: 0;
+  height: auto;
 }
 
 /* 8010 嵌入页自带 48px「返回卡片」条。裁掉后内容区只留 Blade 页面，返回仍在控制台里。 */
