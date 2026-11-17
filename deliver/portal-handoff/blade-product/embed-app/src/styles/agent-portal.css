@@ -933,6 +933,26 @@ a.agent-card-go:hover {
   text-decoration: none;
 }
 
+.agent-install-pop {
+  margin: 6px 0 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  color: var(--text-3, #969799);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  animation: agent-install-flash 1.2s ease forwards;
+}
+
+@keyframes agent-install-flash {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 .agent-clone-note {
   margin: 8px 0 0;
   color: var(--text-2);

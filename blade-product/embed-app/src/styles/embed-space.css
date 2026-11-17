@@ -37,6 +37,12 @@
   border-right: 1px solid #e8ecf3;
 }
 
+/* 内层弹窗打开时，标签降到 iframe 下面。遮罩画在 iframe 里，就能盖住左上角。标签节点还在。 */
+.embed-chat-space:has(.ba-frame[data-modal="1"]) .embed-chat-space-head {
+  z-index: 0;
+  pointer-events: none;
+}
+
 /* 对话页铺满整格，从顶栏下缘起画。标签盖在左列顶上，不占主列的高度。 */
 .embed-chat-space > :not(.embed-chat-space-head) {
   grid-column: 1 / -1;

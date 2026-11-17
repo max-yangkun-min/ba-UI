@@ -29,12 +29,6 @@ export const resourceNav = [
     to: "/resources/plugins",
     summary: "与后台插件目录同步。",
   },
-  {
-    id: "prompt-templates",
-    label: "提示词模板",
-    to: "/resources/prompt-templates",
-    summary: "查看控制台提示词工程里已保存的模板。",
-  },
 ] as const;
 
 export type ResourceKind = (typeof resourceNav)[number]["id"];

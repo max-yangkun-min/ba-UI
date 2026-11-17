@@ -1,11 +1,15 @@
 import { useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { embedAppPage } from "../data/embed-origin";
 import { useEmbedGrant } from "../lib/embed-grant";
 import { useLabAuth } from "../lib/lab-auth";
 
 /** 外壳只留顶栏。页签在嵌入页里，这里不再画第二套「AI对话」。 */
 export function ChatEmbed() {
-  const src = embedAppPage("/");
+  const [params] = useSearchParams();
+  const chatQuery = params.toString();
+  const page = embedAppPage("/");
+  const src = page && chatQuery ? `${page}?${chatQuery}` : page;
   const frameRef = useRef<HTMLIFrameElement>(null);
   const { session } = useLabAuth();
   useEmbedGrant(frameRef, src, "/");
@@ -24,7 +28,7 @@ export function ChatEmbed() {
 
   return (
     <div className="shell-embed">
-      <iframe key={session?.token || "admin"} ref={frameRef} className="shell-embed-frame" title="对话" src={src} scrolling="no" />
+      <iframe key={`${session?.token || "admin"}:${chatQuery}`} ref={frameRef} className="shell-embed-frame" title="对话" src={src} scrolling="no" />
     </div>
   );
 }

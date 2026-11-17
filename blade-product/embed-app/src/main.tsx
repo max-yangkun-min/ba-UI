@@ -5,7 +5,7 @@ import { installEmbedResize } from "./lib/embed-resize";
 import { installPortalSession } from "./lib/portal-session";
 
 installEmbedResize();
-// 门户展示页不等票。对话和后台开发页自己等父页面的票，超时也不要用超级管理员先把内层打开。
+// 门户目录没有票就先用超级管理员。父页面后来的票和对话页是同一条。对话页没有票则停在未授权。
 void installPortalSession();
 
 createRoot(document.getElementById("root")!).render(

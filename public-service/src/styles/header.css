@@ -140,9 +140,13 @@
   border-radius: var(--radius);
 }
 
-/* 顶栏不显示当前登录用户。账号仍在，只是不露出头像、名字和账号菜单。 */
+/* 生产顶栏不显示当前登录用户。开发测试壳露出账号，方便确认当前实验室用户。 */
 .header-right .menu-anchor:has(> .user-chip) {
   display: none;
+}
+
+.header-right .menu-anchor.lab-session:has(> .user-chip) {
+  display: block;
 }
 
 .avatar {

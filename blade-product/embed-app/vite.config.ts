@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv, type ProxyOptions } from "vite";
 import react from "@vitejs/plugin-react";
+import { createPortalAccess, portalCatalogDev } from "./portal-catalog-auth.ts";
 
 const embedDir = dirname(fileURLToPath(import.meta.url));
 
@@ -13,7 +14,8 @@ const LLM_GATEWAY = "http://192.168.171.128:30000";
 
 /**
  * 开发时代理把令牌放进 Authorization，前端地址里不出现令牌，这里也不打印。
- * 浏览器已经带了当前用户的票时，沿用那张票；否则仍用整站超级管理员票。
+ * 浏览器已经带了当前用户的票时，业务接口沿用那张票；否则仍用整站超级管理员票。
+ * 门户目录读取不走这里：portal-catalog-auth 会换成服务端访问票。票缺失、快过期或 401 时用固定账号重登。
  */
 function proxyTo(target: string, token: string, strip: RegExp): ProxyOptions {
   return {
@@ -39,6 +41,30 @@ const embedHeaders = {
 function hostFromOrigin(origin: string): string {
   const match = origin.trim().match(/^https?:\/\/([^/:]+)/i);
   return match ? match[1] : "";
+}
+
+function portalLoginDev() {
+  const file = join(embedDir, "public", "portal-login.js");
+  return {
+    name: "portal-login-dev",
+    configureServer(server: { middlewares: { use: Function } }) {
+      server.middlewares.use("/portal-login.js", (req: { method?: string }, res: {
+        statusCode: number;
+        setHeader: (name: string, value: string) => void;
+        end: (body?: string) => void;
+      }, next: () => void) => {
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          next();
+          return;
+        }
+        const body = existsSync(file) ? readFileSync(file, "utf8") : "window.__BLADE_PORTAL_LOGIN_URL__ = \"\";\n";
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+        res.setHeader("Cache-Control", "no-store");
+        res.end(req.method === "HEAD" ? undefined : body);
+      });
+    },
+  };
 }
 
 function bladeSiteDev(origin: string) {
@@ -75,12 +101,18 @@ const AGENT_IDENTITY_KEYS = [
   "app_id",
 ];
 
-/** 与 serve.py GET /api/catalog-counts 同一口径。调用方不需要带令牌。 */
-function catalogCountsDev(token: string) {
+type PortalAccess = { ensure: (force: boolean) => Promise<string> };
+
+/** 与 serve.py GET /api/catalog-counts 同一口径。用户票优先；门户目录标记则只用服务端访问票。 */
+function catalogCountsDev(store: PortalAccess) {
   return {
     name: "catalog-counts-dev",
     configureServer(server: { middlewares: { use: Function } }) {
-      server.middlewares.use("/api/catalog-counts", (req: { method?: string; headers?: Record<string, string | string[] | undefined> }, res: {
+      server.middlewares.use("/api/catalog-counts", (req: {
+        method?: string;
+        portalService?: boolean;
+        headers?: Record<string, string | string[] | undefined>;
+      }, res: {
         statusCode: number;
         setHeader: (name: string, value: string) => void;
         end: (body?: string) => void;
@@ -89,7 +121,7 @@ function catalogCountsDev(token: string) {
           res.statusCode = 204;
           res.setHeader("Access-Control-Allow-Origin", "*");
           res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-          res.setHeader("Access-Control-Allow-Headers", "Accept, Authorization");
+          res.setHeader("Access-Control-Allow-Headers", "Accept, Authorization, X-Blade-Portal-Catalog");
           res.end();
           return;
         }
@@ -99,11 +131,26 @@ function catalogCountsDev(token: string) {
           res.end(req.method === "HEAD" ? undefined : "method not allowed");
           return;
         }
-        const bearer = callerBearer(headerValue(req.headers?.authorization));
-        void writeCatalogCounts(bearer || token, req.method, res);
+        const portal = req.portalService === true;
+        const bearer = portal ? "" : callerBearer(headerValue(req.headers?.authorization));
+        void (async () => {
+          const token = bearer || (await store.ensure(false));
+          const refresh = bearer ? undefined : () => store.ensure(true);
+          await writeCatalogCounts(token, req.method, res, refresh);
+        })();
       });
     },
   };
+}
+
+class UpstreamStatus extends Error {
+  status: number;
+
+  constructor(status: number) {
+    super("upstream");
+    this.name = "UpstreamStatus";
+    this.status = status;
+  }
 }
 
 async function writeCatalogCounts(
@@ -114,6 +161,7 @@ async function writeCatalogCounts(
     setHeader: (name: string, value: string) => void;
     end: (body?: string) => void;
   },
+  refresh?: () => Promise<string>,
 ) {
   const send = (status: number, payload: unknown) => {
     const body = JSON.stringify(payload);
@@ -125,22 +173,37 @@ async function writeCatalogCounts(
     res.setHeader("Content-Length", String(Buffer.byteLength(body)));
     res.end(method === "HEAD" ? undefined : body);
   };
-  if (!token) {
-    send(503, { error: "catalog unavailable" });
-    return;
-  }
-  try {
+  const load = async (use: string) => {
     const [skills, plugins, agents] = await Promise.all([
-      readUpstreamJson(`${BLADE_AGENT}/api/skill-store/catalog`, token),
-      readUpstreamJson(`${BLADE_HUB}/api/plugins`, token),
-      readUpstreamJson(`${BLADE_OS}/api/v1/market/listings?sort=recent`, token),
+      readUpstreamJson(`${BLADE_AGENT}/api/skill-store/catalog`, use),
+      readUpstreamJson(`${BLADE_HUB}/api/plugins`, use),
+      readUpstreamJson(`${BLADE_OS}/api/v1/market/listings?sort=recent`, use),
     ]);
     send(200, {
       skills: countPublicSkills(skills),
       plugins: countPublicPlugins(plugins),
       agents: countPublicAgents(agents),
     });
-  } catch {
+  };
+  if (!token) {
+    send(503, { error: "catalog unavailable" });
+    return;
+  }
+  try {
+    await load(token);
+  } catch (error) {
+    if (refresh && error instanceof UpstreamStatus && error.status === 401) {
+      try {
+        const next = await refresh();
+        if (next && next !== token) {
+          await load(next);
+          return;
+        }
+      } catch {
+        send(502, { error: "catalog unavailable" });
+        return;
+      }
+    }
     send(502, { error: "catalog unavailable" });
   }
 }
@@ -151,6 +214,7 @@ async function readUpstreamJson(url: string, token: string): Promise<unknown> {
     signal: AbortSignal.timeout(60000),
   });
   const text = await response.text();
+  if (response.status === 401) throw new UpstreamStatus(401);
   if (!response.ok || /<html|<!doctype/i.test(text)) throw new Error("upstream");
   return JSON.parse(text) as unknown;
 }
@@ -573,8 +637,8 @@ function spaceUrlsDev() {
   };
 }
 
-/** 开发服务同源下发令牌。值只留在 Node 进程里，不打进前端包。 */
-function embedAuthDev(token: string) {
+/** 开发服务同源下发对话用的令牌。值只留在 Node 进程里，不打进前端包。临近过期时仍只用刷新票。 */
+function embedAuthDev(store: PortalAccess) {
   return {
     name: "embed-auth-dev",
     configureServer(server: { middlewares: { use: Function } }) {
@@ -587,11 +651,17 @@ function embedAuthDev(token: string) {
           next();
           return;
         }
-        const body = JSON.stringify({ token });
-        res.statusCode = token ? 200 : 503;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.setHeader("Cache-Control", "no-store");
-        res.end(req.method === "HEAD" ? undefined : body);
+        void store.ensure(false).then((token) => {
+          const body = JSON.stringify({ token });
+          res.statusCode = token ? 200 : 503;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.setHeader("Cache-Control", "no-store");
+          res.end(req.method === "HEAD" ? undefined : body);
+        }).catch(() => {
+          res.statusCode = 503;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(req.method === "HEAD" ? undefined : JSON.stringify({ token: "" }));
+        });
       });
     },
   };
@@ -600,14 +670,37 @@ function embedAuthDev(token: string) {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ".", "");
   const token = (env.VITE_BA_EMBED_TOKEN ?? "").trim();
+  const tokenFile = {
+    access: token,
+    refresh: (env.EMBED_REFRESH_TOKEN ?? "").trim(),
+    envFile: join(embedDir, ".env.local"),
+    refreshUrl: `${BLADE_AGENT}/api/auth/refresh`,
+  };
+  const chatAccess = createPortalAccess(tokenFile);
+  const rawExpiry = Number(env.EMBED_ACCESS_EXPIRES_AT ?? "");
+  const portalAccess = createPortalAccess({
+    ...tokenFile,
+    agentOrigin: BLADE_AGENT,
+    username: (env.EMBED_USERNAME ?? "").trim(),
+    password: env.EMBED_PASSWORD ?? "",
+    accountLogin: true,
+    accessExpiresAt: Number.isFinite(rawExpiry) && rawExpiry > 0 ? rawExpiry * 1000 : null,
+  });
+  const portalTargets = {
+    "/api-ba": BLADE_AGENT,
+    "/api-bh": BLADE_HUB,
+    "/api-bos": BLADE_OS,
+  };
 
   return {
     plugins: [
       react(),
-      embedAuthDev(token),
-      catalogCountsDev(token),
+      portalCatalogDev(portalAccess, portalTargets),
+      embedAuthDev(chatAccess),
+      catalogCountsDev(portalAccess),
       batchDeleteDev(),
       bladeSiteDev(env.VITE_BA_ORIGIN ?? ""),
+      portalLoginDev(),
       spaceUrlsDev(),
     ],
     server: {
@@ -615,6 +708,9 @@ export default defineConfig(({ mode }) => {
       port: 5174,
       strictPort: true,
       headers: embedHeaders,
+      fs: {
+        deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**", "**/portal-catalog-auth.ts", "**/serve.py"],
+      },
       proxy: {
         "/api-ba": proxyTo(BLADE_AGENT, token, /^\/api-ba/),
         "/api-llm": proxyTo(LLM_GATEWAY, token, /^\/api-llm/),

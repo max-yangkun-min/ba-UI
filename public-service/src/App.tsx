@@ -35,7 +35,6 @@ export function App() {
           <Route path="/chat-general-admin" element={<ChatGeneralAdmin />} />
           <Route path="/resources/prompts" element={<Navigate to="/console/app-dev/prompts" replace />} />
           <Route path="/resources/prompts/*" element={<Navigate to="/console/app-dev/prompts" replace />} />
-          <Route path="/resources/*" element={<ShellEmbed />} />
           {LoginTestRoute}
           <Route path="/console" element={<ConsoleLayout />}>
             <Route index element={<ConsoleHome />} />

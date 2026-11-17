@@ -189,7 +189,7 @@ def main() -> None:
             required.append(f"{STAGE}/experts/{expert}/scenario.json")
         ui_ver = tar.extractfile(f"{STAGE}/blade-ui-plugin/VERSION").read().strip()
         iframe_ver = tar.extractfile(f"{STAGE}/blade-iframe-plugin/VERSION").read().strip()
-        if ui_ver != b"0.2.117":
+        if ui_ver != b"0.2.122":
             problems.append("ui version %s" % ui_ver)
         ui_css = tar.extractfile(f"{STAGE}/blade-ui-plugin/files/blade-ui-theme-ba.css").read()
         if b"data-resize-handle" not in ui_css or b"width: 9px" not in ui_css:
@@ -197,7 +197,7 @@ def main() -> None:
         ui_js = tar.extractfile(f"{STAGE}/blade-ui-plugin/files/blade-ui-theme.js").read()
         if b"127.0.0.1" in ui_js or b"agent log" in ui_js:
             problems.append("ui script still has debug logging")
-        if iframe_ver != b"1.1.29":
+        if iframe_ver != b"1.1.30":
             problems.append("iframe version %s" % iframe_ver)
         notes = tar.extractfile(f"{STAGE}/部署说明.md").read().decode("utf-8")
         for needle in ("20261107-blade-arm-offline", "http://<生产IP>:5173/resources/agents", "http://<生产IP>:5173/console/app-dev/factory", "20261022-skills"):

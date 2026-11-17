@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
-export const LAB_USERS = ["lab1028-a", "lab1028-b"] as const;
+export const LAB_USERS = ["lab1028-a", "lab1028-b", "lab1028-c", "lab1028-d", "lab1028-e"] as const;
 
 type LabSession = {
   username: string;

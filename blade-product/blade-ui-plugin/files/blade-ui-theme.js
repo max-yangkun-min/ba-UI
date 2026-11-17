@@ -7,6 +7,7 @@
   var sidebarExpandTries = 0;
   var routeWatchBound = false;
   var embedShellReady = null;
+  var embedModalOpen = null;
 
   // 运营中心整页走 Blade 原生界面：/admin 以及 ?tab= 下的总览、趋势、平台能力等。
   // 停掉主题样式表，颜色、顶栏和布局回到产品自己的样式。对话、技能、知识库和公开壳不走这里。
@@ -854,9 +855,15 @@
 
   // 对话首页输入栏：「技能」「知识库」。
   // 不往编辑器里塞 / 或 @。空的 / 面板只会显示「没有匹配」，这里用自己的列表。
-  // 技能来自对话客户端已有的 GET /api/skills/installed（已安装、可调用）。
-  // 知识库来自 fileMention 的 items（@ 面板那次加载），只留 kind=kb，文件不放进来。
-  // 点选后调用原来的 suggestion.command，插入 skillMention 或 kbMention。
+  // 技能走 8020 的 GET /api/skill-store/catalog：本人的（含私有）∪ 预置组织里市场上架的。
+  // 知识库不走 fileMention 的 default，也不走「当前账号已经安装过」的名单。
+  // 8020 的 GET /api/registry/kb 把 scope 原样转到 Hub 8010 的 GET /api/kb，身份是当前对话会话的票。
+  // scope=mine 是本人的库（含私有、待审）以及无主库；scope=market 只含 visibility=public 的已上架库。
+  // 这两份没有单独的并集参数。Hub 的 scope=all 就是它们的并集：
+  // 本人的（owner_user_id 等于当前用户）或无主，再加上 visibility=public。
+  // 别人的私有库、待审和未上架不在这份结果里。无主且未公开的也不算本人的库，前端丢掉。
+  // 门户目录仍单独请求 scope=market，不走这里。技能列表和预装也不走这里。
+  // 点选后仍调用原来的 fileMention suggestion.command，插入 kbMention。
   var composerPicker = null;
   var composerPickerBound = false;
 
@@ -884,66 +891,84 @@
     return suggestion;
   }
 
-  function waitComposer(ms) {
-    return new Promise(function (resolve) {
-      setTimeout(resolve, ms);
-    });
-  }
-
   function loadComposerSkills() {
-    return fetch("/api/skills/installed", { credentials: "include" }).then(function (response) {
+    // 一次请求拿并集。credentials 用当前页的会话票，不写死超级管理员。
+    // 8020 的 GET /api/skill-store/catalog 透传 Hub 8010 的 GET /api/skills。
+    // 技能目录没有 visibility / published。本人的技能是 is_owner 或 org_is_mine
+    // （个人命名空间，含未上架的私有技能）。市场上架、别人也能用的是 is_preset
+    // （预置组织）。目录本身是可见集，前端再筛：留下本人的或 is_preset，按 skill id 去重。
+    // 别人的私有、点对点分享、非预置组织里的技能，is_owner 和 is_preset 都不是，丢掉。
+    // 点选仍走 skillMention。installed 跟目录里的 is_installed 走，未安装的会先装再加载。
+    return fetch("/api/skill-store/catalog?limit=1000", {
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "application/json" }
+    }).then(function (response) {
       if (!response.ok) throw new Error("skills");
       return response.json();
-    }).then(function (rows) {
-      if (!Array.isArray(rows)) return [];
+    }).then(function (payload) {
+      if (payload && payload.ok === false) throw new Error("skills");
+      var rows = payload && Array.isArray(payload.skills)
+        ? payload.skills
+        : (Array.isArray(payload) ? payload : []);
       var items = [];
       var seen = {};
       var i;
       for (i = 0; i < rows.length; i += 1) {
         var row = rows[i];
         if (!row || typeof row !== "object") continue;
-        if (row.is_installed === false || row.installed === false) continue;
+        var own = row.is_owner === true || row.org_is_mine === true;
+        var market = row.is_preset === true;
+        if (!own && !market) continue;
         var skillId = row.id || row.skill_id;
         if (!skillId || seen[skillId]) continue;
         seen[skillId] = true;
+        var installed = true;
+        if (row.is_installed === false || row.installed === false) installed = false;
         items.push({
           type: "skill",
           skillId: skillId,
           displayName: row.display_name || row.displayName || row.name || skillId,
           description: row.description || "",
           local: row.local === true,
-          installed: true
+          installed: installed
         });
       }
       return items;
     });
   }
 
-  function knowledgeItems(list) {
-    var items = [];
-    var seen = {};
-    if (!Array.isArray(list)) return items;
-    var i;
-    for (i = 0; i < list.length; i += 1) {
-      var item = list[i];
-      if (!item || item.kind !== "kb" || typeof item.kbId !== "number") continue;
-      if (seen[item.kbId]) continue;
-      seen[item.kbId] = true;
-      items.push(item);
-    }
-    return items;
-  }
-
-  function loadComposerKnowledge(editor) {
-    var suggestion = composerSuggestionCommand(editor, "fileMention");
-    if (!suggestion || typeof suggestion.items !== "function") return Promise.resolve([]);
-    function read() {
-      return Promise.resolve(suggestion.items({ query: "", editor: editor })).then(knowledgeItems);
-    }
-    // @ 面板的知识库加载有 300ms 上限，超时先返回空，稍后再取已经回来的结果。
-    return read().then(function (items) {
-      if (items.length) return items;
-      return waitComposer(450).then(read);
+  function loadComposerKnowledge() {
+    // 一次请求拿并集。credentials 用当前页的会话票，不写死超级管理员。
+    // scope=all：本人的库（含私有）∪ 已上架且 visibility=public。同一条库按 id 去重。
+    return fetch("/api/registry/kb?scope=all", {
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "application/json" }
+    }).then(function (response) {
+      if (!response.ok) throw new Error("kb");
+      return response.json();
+    }).then(function (rows) {
+      var list = Array.isArray(rows) ? rows : (rows && Array.isArray(rows.items) ? rows.items : []);
+      var items = [];
+      var seen = {};
+      var i;
+      for (i = 0; i < list.length; i += 1) {
+        var row = list[i];
+        var kbId = row && row.id;
+        if (!row || typeof kbId !== "number" || seen[kbId]) continue;
+        var published = row.visibility === "public";
+        var own = typeof row.owner_user_id === "string" && row.owner_user_id.length > 0;
+        if (!published && !own) continue;
+        seen[kbId] = true;
+        items.push({
+          kind: "kb",
+          kbId: kbId,
+          name: row.name || "",
+          description: row.description || ""
+        });
+      }
+      return items;
     });
   }
 
@@ -1035,7 +1060,7 @@
     button.setAttribute("data-blade-ui-composer-open", "true");
     var token = { kind: kind, button: button, panel: panel };
     composerPicker = token;
-    var loader = kind === "skill" ? loadComposerSkills() : loadComposerKnowledge(editor);
+    var loader = kind === "skill" ? loadComposerSkills() : loadComposerKnowledge();
     Promise.resolve(loader).then(function (items) {
       if (composerPicker !== token) return;
       renderComposerPicker(panel, editor, kind, items);
@@ -1129,6 +1154,7 @@
     if (observer) observer.disconnect();
     try {
     dismissEmbedOnboarding();
+    preloadChatPlugin();
     if (syncOpsNative()) {
       var opsRoot = document.documentElement;
       if (opsRoot) {
@@ -1140,6 +1166,7 @@
       }
       hideEmbedRowMenu();
       notifyEmbedShell();
+      notifyEmbedModal();
       return;
     }
     var live = chatIsLive();
@@ -1184,6 +1211,7 @@
     markConsolePage();
     syncSkillCategories();
     notifyEmbedShell();
+    notifyEmbedModal();
     document.documentElement.removeAttribute("data-blade-ui-error");
     } catch (err) {
       document.documentElement.setAttribute("data-blade-ui-error", String(err && err.message || err).slice(0, 200));
@@ -1265,6 +1293,72 @@
     try {
       parentWin.postMessage({ type: "blade-embed-shell", ready: ready }, shellParentOrigin());
       embedShellReady = ready;
+    } catch (err) {}
+  }
+
+  // 嵌入态弹出对话框或铺满视口的遮罩时告诉父页面。父页面把「AI对话」降到 iframe 下面，遮罩才能盖住它。
+  // 只发状态变化。不改对话框、不改遮罩、不碰 React 节点。
+  function shownBox(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (el.getAttribute("aria-hidden") === "true" || el.hasAttribute("hidden")) return false;
+    var style;
+    try {
+      style = window.getComputedStyle(el);
+    } catch (err) {
+      return false;
+    }
+    if (!style || style.display === "none" || style.visibility === "hidden") return false;
+    if (parseFloat(style.opacity || "1") === 0) return false;
+    var rect = el.getBoundingClientRect();
+    return rect.width >= 8 && rect.height >= 8;
+  }
+
+  function coversViewport(el) {
+    if (!shownBox(el)) return false;
+    var style = window.getComputedStyle(el);
+    if (style.position !== "fixed" && style.position !== "absolute") return false;
+    var rect = el.getBoundingClientRect();
+    var vw = window.innerWidth || 0;
+    var vh = window.innerHeight || 0;
+    if (vw < 240 || vh < 240) return false;
+    if (rect.width < vw * 0.72 || rect.height < vh * 0.72) return false;
+    var bg = style.backgroundColor || "";
+    if (!bg || bg === "transparent" || bg === "rgba(0, 0, 0, 0)") return false;
+    return true;
+  }
+
+  function embedModalVisible() {
+    var dialogs = document.querySelectorAll("[role='dialog'], [role='alertdialog']");
+    var i;
+    for (i = 0; i < dialogs.length; i += 1) {
+      if (shownBox(dialogs[i])) return true;
+    }
+    var named = document.querySelectorAll("[data-radix-dialog-overlay], [data-vaul-overlay]");
+    for (i = 0; i < named.length; i += 1) {
+      if (shownBox(named[i])) return true;
+    }
+    var opens = document.querySelectorAll("[data-state='open']");
+    for (i = 0; i < opens.length; i += 1) {
+      var cls = opens[i].className;
+      if (typeof cls !== "string" || cls.indexOf("inset-0") === -1) continue;
+      if (coversViewport(opens[i])) return true;
+    }
+    return false;
+  }
+
+  function notifyEmbedModal() {
+    var parentWin = null;
+    try {
+      parentWin = window.parent;
+    } catch (err) {
+      parentWin = null;
+    }
+    if (!parentWin || parentWin === window || !inEmbedFrame()) return;
+    var open = embedModalVisible();
+    if (embedModalOpen === open) return;
+    try {
+      parentWin.postMessage({ type: "blade-embed-modal", open: open }, shellParentOrigin());
+      embedModalOpen = open;
     } catch (err) {}
   }
 
@@ -2721,6 +2815,87 @@
       }
       node = node.parentElement;
     }
+  }
+
+  var pendingPluginLoaded = "";
+
+  function chatPluginQuery() {
+    var params;
+    try {
+      params = new URLSearchParams(window.location.search || "");
+    } catch (err) {
+      return null;
+    }
+    var name = (params.get("plugin") || "").trim();
+    if (!name) return null;
+    var label = (params.get("plugin_name") || "").trim() || name;
+    return { name: name, displayName: label };
+  }
+
+  function reactFiber(el) {
+    if (!el) return null;
+    var keys = Object.keys(el);
+    var i;
+    for (i = 0; i < keys.length; i += 1) {
+      if (keys[i].indexOf("__reactFiber") === 0) return el[keys[i]];
+    }
+    return null;
+  }
+
+  function pendingPluginProps(button) {
+    var fiber = reactFiber(button);
+    var guard = 0;
+    while (fiber && guard < 60) {
+      var props = fiber.memoizedProps;
+      if (props && typeof props.onPendingPluginsChange === "function") return props;
+      fiber = fiber.return;
+      guard += 1;
+    }
+    return null;
+  }
+
+  // 对话客户端只按地址里的 skill、kb 自动插入提及，不认识 plugin。
+  // 插件要进「待选插件」，首条消息才会启用。连接器按钮上能找到这份状态。
+  function preloadChatPlugin() {
+    var wanted = chatPluginQuery();
+    if (!wanted) {
+      pendingPluginLoaded = "";
+      return;
+    }
+    if (pendingPluginLoaded === wanted.name) return;
+    var buttons = document.querySelectorAll("button[aria-label]");
+    var button = null;
+    var i;
+    for (i = 0; i < buttons.length; i += 1) {
+      var label = buttons[i].getAttribute("aria-label") || "";
+      if (label.indexOf("连接器") === 0) {
+        button = buttons[i];
+        break;
+      }
+    }
+    if (!button) return;
+    var props = pendingPluginProps(button);
+    if (!props) return;
+    var current = Array.isArray(props.pendingPlugins) ? props.pendingPlugins : [];
+    var exists = false;
+    for (i = 0; i < current.length; i += 1) {
+      if (current[i] && current[i].name === wanted.name) exists = true;
+    }
+    if (!exists) {
+      var next = current.slice();
+      next.push({
+        name: wanted.name,
+        displayName: wanted.displayName,
+        icon: null,
+        iconSource: "account"
+      });
+      try {
+        props.onPendingPluginsChange(next);
+      } catch (err) {
+        return;
+      }
+    }
+    pendingPluginLoaded = wanted.name;
   }
 
   function schedule() {

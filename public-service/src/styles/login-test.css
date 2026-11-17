@@ -18,6 +18,7 @@
 
 .login-test-page .page-actions {
   margin-top: 16px;
+  flex-wrap: wrap;
 }
 
 .login-test-error {

@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var PLUGIN_VERSION = "1.1.29";
+  var PLUGIN_VERSION = "1.1.30";
   var params = new URLSearchParams(window.location.search);
   var embedMode =
     params.get("mode") === "embed" ||
@@ -764,6 +764,68 @@
     return nativeFetch(input, next);
   }
 
+  // 直接父页面是嵌入页。再外面还有一层，才是大系统把嵌入页嵌进来。
+  // 单独打开嵌入页时 top 就是父页面，不通知，登录页留在原地。
+  function embeddedUnderHost() {
+    try {
+      return window.parent !== window && window.top !== window.parent;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  var hostLogoutSent = false;
+  function notifyHostLogout() {
+    if (hostLogoutSent || !embeddedUnderHost() || !token) return;
+    hostLogoutSent = true;
+    try {
+      window.parent.postMessage(
+        { type: "blade-embed-logout", service: service, plugin: PLUGIN_VERSION },
+        parentOrigin || "*"
+      );
+    } catch (_) {}
+  }
+
+  function requestMethod(input, init) {
+    if (init && init.method) return String(init.method).toUpperCase();
+    if (input instanceof Request && input.method) return String(input.method).toUpperCase();
+    return "GET";
+  }
+
+  function isLogoutCall(input, init) {
+    if (requestMethod(input, init) !== "POST") return false;
+    var requestUrl = input instanceof Request ? input.url : String(input || "");
+    try {
+      var url = new URL(requestUrl, window.location.href);
+      var path = url.pathname.replace(/\/+$/, "") || "/";
+      return url.origin === window.location.origin && path === "/api/auth/logout";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function loginWallVisible() {
+    var nodes = document.querySelectorAll("h1");
+    var i;
+    for (i = 0; i < nodes.length; i += 1) {
+      if ((nodes[i].textContent || "").replace(/\s+/g, "") === "\u767b\u5f55Blade") return true;
+    }
+    return false;
+  }
+
+  function watchLoginWall() {
+    if (!embeddedUnderHost() || !document.documentElement) return;
+    var check = function () {
+      if (!token || hostLogoutSent) return;
+      if (loginWallVisible()) notifyHostLogout();
+    };
+    new MutationObserver(check).observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  }
+
   var nativeFetch = window.fetch.bind(window);
   window.fetch = function (input, init) {
     var requestUrl = input instanceof Request ? input.url : String(input);
@@ -780,9 +842,11 @@
     }
     return waitToken().then(function (value) {
       var pending = authorizedFetch(input, init, value);
-      if (!catalog) return pending;
+      var logout = isLogoutCall(input, init);
+      if (!catalog && !logout) return pending;
       return pending.then(function (response) {
-        storeSkillCatalogResponse(response);
+        if (catalog) storeSkillCatalogResponse(response);
+        if (logout && response && response.ok) notifyHostLogout();
         return response;
       });
     });
@@ -792,10 +856,23 @@
   var nativeSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function (method, url) {
     this.__bladeEmbedApi = isApiUrl(url);
+    this.__bladeEmbedLogout = false;
+    try {
+      if (String(method || "").toUpperCase() === "POST") {
+        var parsed = new URL(String(url || ""), window.location.href);
+        var path = parsed.pathname.replace(/\/+$/, "") || "/";
+        this.__bladeEmbedLogout = parsed.origin === window.location.origin && path === "/api/auth/logout";
+      }
+    } catch (_) {}
     return nativeOpen.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function (body) {
     var xhr = this;
+    if (xhr.__bladeEmbedLogout) {
+      xhr.addEventListener("load", function () {
+        if (xhr.status >= 200 && xhr.status < 300) notifyHostLogout();
+      });
+    }
     if (!xhr.__bladeEmbedApi) return nativeSend.call(xhr, body);
     waitToken().then(function (value) {
       xhr.setRequestHeader("Authorization", "Bearer " + value);
@@ -1024,6 +1101,7 @@
     },
   };
 
+  watchLoginWall();
   announceReady();
   var readyTimer = window.setInterval(function () {
     if (token) window.clearInterval(readyTimer);

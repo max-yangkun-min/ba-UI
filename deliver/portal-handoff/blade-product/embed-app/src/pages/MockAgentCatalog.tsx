@@ -286,7 +286,6 @@ export function MockAgentCatalog() {
                     </div>
                     <div className="agent-card-meta">
                       <span className="agent-card-lead">
-                        {item.owner ? <span>{item.owner}</span> : null}
                         {item.updatedAt ? <time>{catalogDate(item.updatedAt)}</time> : null}
                       </span>
                       <span className="agent-meta-stat" title={item.usageHint || "用量"}>

@@ -1,27 +1,14 @@
 import { useEffect, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { EMBED_ORIGIN } from "../data/embed-origin";
 import { portalEmbedPath, useEmbedGrant } from "../lib/embed-grant";
 import { useLabAuth } from "../lib/lab-auth";
 
-/** 开发时浏览页和控制台应用开发都走本机嵌入页。嵌入页自己向 /embed-auth 要平台票。生产包用 shell-site.js 里的地址。 */
+/** 开发时控制台应用开发走本机嵌入页。嵌入页自己向 /embed-auth 要平台票。生产包用 shell-site.js 里的地址。 */
 const LOCAL_EMBED = import.meta.env.DEV ? "http://127.0.0.1:5174" : EMBED_ORIGIN;
 
 function embedSrc(pathname: string, search: string, hash: string) {
-  const localResource =
-    pathname === "/resources/agents" ||
-    pathname.startsWith("/resources/agents/") ||
-    pathname === "/resources/skills" ||
-    pathname.startsWith("/resources/skills/") ||
-    pathname === "/resources/knowledge" ||
-    pathname.startsWith("/resources/knowledge/") ||
-    pathname === "/resources/tools" ||
-    pathname.startsWith("/resources/tools/") ||
-    pathname === "/resources/plugins" ||
-    pathname.startsWith("/resources/plugins/") ||
-    pathname === "/resources/prompt-templates" ||
-    pathname.startsWith("/resources/prompt-templates/");
-  if (localResource || pathname.startsWith("/console/app-dev/")) {
+  if (pathname.startsWith("/console/app-dev/")) {
     return `${LOCAL_EMBED}${pathname}${search}${hash}`;
   }
   return `${EMBED_ORIGIN}${pathname}${search}${hash}`;
@@ -31,7 +18,7 @@ function embedSrc(pathname: string, search: string, hash: string) {
 function withPortalParent(url: string) {
   try {
     const parsed = new URL(url, window.location.href);
-    if (!parsed.searchParams.has("embed_parent")) parsed.searchParams.set("embed_parent", window.location.origin);
+    parsed.searchParams.set("embed_parent", window.location.origin);
     return parsed.toString();
   } catch {
     return url;
@@ -46,6 +33,12 @@ function clipsHubBar(src: string) {
   } catch {
     return false;
   }
+}
+
+function safeChatResourceId(value: string) {
+  const id = value.trim();
+  if (!id || id.length > 200 || id.includes("..") || /[\s?#\\]/.test(id)) return "";
+  return id;
 }
 
 function outerOrigin() {
@@ -65,6 +58,7 @@ function outerOrigin() {
 
 export function ShellEmbed() {
   const location = useLocation();
+  const navigate = useNavigate();
   const src = withPortalParent(embedSrc(location.pathname, location.search, location.hash));
   const clip = clipsHubBar(src);
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -136,8 +130,32 @@ export function ShellEmbed() {
 
     const onMessage = (event: MessageEvent) => {
       if (event.source !== frame.contentWindow) return;
-      const data = event.data as { type?: string; service?: string; mode?: string; fit?: string; height?: number } | null;
-      if (!data || (data.type !== "blade-embed-resize" && data.type !== "blade-embed-ready")) return;
+      const data = event.data as { type?: string; service?: string; mode?: string; fit?: string; height?: number; kb?: string; target?: string; id?: string; name?: string } | null;
+      if (!data) return;
+      if (data.type === "blade-embed-open-chat") {
+        if (data.target === "agents") {
+          if (window.parent !== window) {
+            window.parent.postMessage({ type: "blade-embed-open-chat", service: "shell", target: "agents" }, outerOrigin());
+          }
+          navigate("/");
+          return;
+        }
+        const target = data.target === "skills" || data.target === "knowledge" || data.target === "plugins" ? data.target : typeof data.kb === "string" && data.kb.trim() ? "knowledge" : "";
+        const raw = typeof data.id === "string" ? data.id : typeof data.kb === "string" ? data.kb : "";
+        const id = safeChatResourceId(raw);
+        if (!target || !id) return;
+        const name = typeof data.name === "string" ? data.name.trim() : "";
+        if (window.parent !== window) {
+          window.parent.postMessage({ type: "blade-embed-open-chat", service: "shell", target, id, name }, outerOrigin());
+        }
+        const query = new URLSearchParams();
+        query.set("chat", target);
+        query.set("id", id);
+        if (name) query.set("name", name);
+        navigate(`/?${query.toString()}`);
+        return;
+      }
+      if (data.type !== "blade-embed-resize" && data.type !== "blade-embed-ready") return;
       if (data.service === "shell") return;
       const content = data.mode === "grow" || data.mode === "content" || data.fit === "content";
       mode = content ? "content" : "fill";
@@ -158,7 +176,7 @@ export function ShellEmbed() {
       window.removeEventListener("message", onMessage);
       window.removeEventListener("resize", onResize);
     };
-  }, [src, clip, frameKey, portal]);
+  }, [src, clip, frameKey, portal, navigate]);
 
   return (
     <div className={clip ? "shell-embed shell-embed-clip" : "shell-embed"} data-portal-flow={portal ? "1" : undefined}>

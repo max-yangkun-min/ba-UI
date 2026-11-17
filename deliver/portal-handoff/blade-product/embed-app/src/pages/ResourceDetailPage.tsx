@@ -1,17 +1,21 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
 import { Dialog } from "../components/Dialog";
 import { Icon } from "../components/Icon";
 import { useToast } from "../components/Toast";
 import { baOrigin, hubOrigin } from "../data/site";
 import { findResourceNav, type ResourceKind } from "../data/resource-nav";
-import { addMarketListing } from "../features/resources/agent-market";
+import { BaEmbed } from "../features/agent/BaEmbed";
+import { addMarketListing, removeMarketListing } from "../features/resources/agent-market";
 import { portalAgentCategory } from "../features/resources/agent-categories";
 import { loadResourceDetail, type ResourceDetail } from "../features/resources/detail";
 import { addLocalDiscussion, readLocalDiscussions, type LocalDiscussion } from "../features/resources/local-discussions";
 import { readLocalFavorite, writeLocalFavorite } from "../features/resources/local-favorites";
 import { portalSkillCategory } from "../features/resources/skill-categories";
-import { installStoreSkill } from "../features/resources/skill-store";
+import { installAccountKnowledge, installAccountPlugin, uninstallAccountKnowledge, uninstallAccountPlugin } from "../features/resources/account-install";
+import { installStoreSkill, uninstallStoreSkill } from "../features/resources/skill-store";
+import { redirectToPortalLogin } from "../data/portal-login";
+import { portalInstallToken, watchPortalInstallToken } from "../lib/portal-session";
 
 const icons: Record<ResourceKind, string> = {
   skills: "function-line",
@@ -110,9 +114,16 @@ function DetailView({
             favoriteKey={`${kind}:${id}`}
             marketClone={kind === "agents"}
             skillInstall={kind === "skills"}
+            holdInstall={listTo.startsWith("/resources")}
             icon={kind === "agents" ? "edit-line" : icon}
             showShots={kind === "agents"}
-            experienceTopHref={experiencePageUrl(kind, id, params.get("name") ?? "")}
+            experienceEmbed={null}
+            experienceChat={
+              kind === "skills" || kind === "knowledge" || kind === "plugins"
+                ? { kind, id, name: params.get("name") ?? "" }
+                : null
+            }
+            toolId={kind === "tools" ? id : ""}
             onInstalled={() => {
               setPhase("loading");
               setDetail(null);
@@ -140,25 +151,54 @@ function portalCatalogDetail(kind: ResourceKind, listTo: string, id: string, det
   return detail;
 }
 
-function experiencePageUrl(kind: ResourceKind, id: string, name: string) {
-  const agent = baOrigin() || (import.meta.env.DEV ? "http://192.168.171.128:8020" : "");
-  const hub = hubOrigin() || (import.meta.env.DEV ? "http://192.168.171.128:8010" : "");
-  if (kind === "knowledge") return `${agent}/knowledge/${encodeURIComponent(id)}`;
-  if (kind === "skills") {
-    const query = new URLSearchParams();
-    query.set("skill", id);
-    if (name) query.set("skill_name", name);
-    return `${agent}/chat?${query.toString()}`;
+/** 体验地址落在 Blade 或能力中心时，留在门户里嵌开，避免新开页走到登录墙。其它地址仍是这条智能体自己的页面。 */
+function bladeExperienceTarget(url: string): { path: string; origin: string } | null {
+  if (!url) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
   }
-  if (kind === "tools") return `${hub}/tools/${encodeURIComponent(id)}`;
-  if (kind === "plugins") return `${hub}/plugins/${encodeURIComponent(pluginNameOf(id))}`;
-  return undefined;
+  const homes = [baOrigin(), hubOrigin()].filter(Boolean);
+  const matched = homes.find((origin) => {
+    try {
+      return new URL(origin).origin === parsed.origin;
+    } catch {
+      return false;
+    }
+  });
+  if (!matched) return null;
+  return { path: `${parsed.pathname}${parsed.search}`, origin: parsed.origin };
 }
 
-function pluginNameOf(id: string) {
-  if (id.startsWith("builtin-")) return id.slice("builtin-".length);
-  if (id.startsWith("mine-")) return id.slice("mine-".length);
-  return id;
+/** 直接包住本页的窗口。地址栏里的 embed_parent 可能写的是更外层，不能拿来当 postMessage 的目标源。 */
+function liveParentOrigin() {
+  try {
+    const ancestors = window.location.ancestorOrigins;
+    if (ancestors && ancestors.length > 0 && ancestors[0]) return ancestors[0];
+  } catch {
+    // 老浏览器没有 ancestorOrigins 时改看引荐来源。
+  }
+  try {
+    if (document.referrer) return new URL(document.referrer).origin;
+  } catch {
+    // 引荐来源无法解析时仍把打开对话的请求交出去。
+  }
+  return "*";
+}
+
+function postToParent(message: Record<string, string>) {
+  if (window.parent === window) return;
+  window.parent.postMessage(message, liveParentOrigin());
+  try {
+    if (!window.top || window.top === window || window.top === window.parent) return;
+    const ancestors = window.location.ancestorOrigins;
+    const topOrigin = ancestors && ancestors.length > 0 ? ancestors[ancestors.length - 1] || "*" : "*";
+    window.top.postMessage(message, topOrigin);
+  } catch {
+    // 顶层窗口跨源读不到时，直接父页面已经收到。
+  }
 }
 
 const tagTones = ["is-primary", "is-purple", "is-green", ""];
@@ -168,13 +208,14 @@ export function AgentPortalDetail({
   favoriteKey,
   marketClone = false,
   skillInstall = false,
+  holdInstall = false,
   icon,
   onInstalled,
   extra,
   showShots = true,
   experienceEmbed = null,
-  experienceTopHref,
-  onExperience,
+  experienceChat = null,
+  toolId = "",
 }: {
   detail: ResourceDetail;
   favoriteKey: string;
@@ -182,15 +223,21 @@ export function AgentPortalDetail({
   marketClone?: boolean;
   /** 技能详情把「安装」接到技能商店，装到当前账号下使用。立即体验仍打开这条公用技能。 */
   skillInstall?: boolean;
+  /** 门户展示页：没有用户票时去登录主页，地址为空才闪「请先登录」。有用户票才安装或卸载。控制台详情不传。 */
+  holdInstall?: boolean;
   icon: string;
   onInstalled: () => void;
   extra?: ReactNode;
   showShots?: boolean;
+  /** 技能、知识库、工具、插件在门户里嵌开，票由嵌入页向服务端要，不跳到 Blade 登录页。 */
   experienceEmbed?: { path: string; origin?: string } | null;
-  experienceTopHref?: string;
-  onExperience?: () => void;
+  /** 知识库、技能、插件：请外层打开当前单点登录用户的对话。 */
+  experienceChat?: { kind: "skills" | "knowledge" | "plugins"; id: string; name: string } | null;
+  /** 工具不提供立即体验，只测连接。 */
+  toolId?: string;
 }) {
   const toast = useToast();
+  const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState("intro");
   const [confirming, setConfirming] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -200,8 +247,18 @@ export function AgentPortalDetail({
   const [discussions, setDiscussions] = useState<LocalDiscussion[]>(() => readLocalDiscussions(favoriteKey));
   const [draft, setDraft] = useState("");
   const [author, setAuthor] = useState("访客");
-  const alreadyInstalled = skillInstall ? detail.installed : marketClone && detail.marketInstalled;
+  const catalogInstalled = skillInstall ? detail.installed : marketClone && detail.marketInstalled;
+  const alreadyInstalled = holdInstall ? false : catalogInstalled;
   const [clonePhase, setClonePhase] = useState<"idle" | "busy" | "done">(alreadyInstalled ? "done" : "idle");
+  const [installNotice, setInstallNotice] = useState(false);
+  const [actorToken, setActorToken] = useState(() => portalInstallToken());
+  const portalInstalled =
+    holdInstall &&
+    Boolean(actorToken) &&
+    (skillInstall ? detail.installed : marketClone ? detail.marketInstalled : Boolean(experienceChat) && detail.installed);
+  const [installedNow, setInstalledNow] = useState(portalInstalled);
+  const [toolTest, setToolTest] = useState("");
+  const installTimer = useRef<number | null>(null);
   const [cloneNote, setCloneNote] = useState("");
   useEffect(() => {
     setFavored(readLocalFavorite(favoriteKey));
@@ -210,6 +267,13 @@ export function AgentPortalDetail({
     setClonePhase(alreadyInstalled ? "done" : "idle");
     setCloneNote("");
   }, [favoriteKey, detail.listingId, detail.marketInstalled, detail.installed, marketClone, skillInstall, alreadyInstalled]);
+  useEffect(() => () => {
+    if (installTimer.current) window.clearTimeout(installTimer.current);
+  }, []);
+  useEffect(() => watchPortalInstallToken(setActorToken), []);
+  useEffect(() => {
+    setInstalledNow(portalInstalled);
+  }, [favoriteKey, portalInstalled]);
   useEffect(() => {
     let cancelled = false;
     fetch("/api-ba/api/auth/me", { headers: { Accept: "application/json" } })
@@ -237,84 +301,252 @@ export function AgentPortalDetail({
     setDraft("");
   };
 
-  const installSkillForAccount = async () => {
-    if (clonePhase === "busy" || clonePhase === "done") return;
+  const refuseInstall = () => {
+    if (redirectToPortalLogin()) return;
+    setCloneNote("");
+    setAddError("");
+    setInstallNotice(true);
+    if (installTimer.current) window.clearTimeout(installTimer.current);
+    installTimer.current = window.setTimeout(() => setInstallNotice(false), 1200);
+  };
+
+  const markPortalInstalled = () => {
+    if (!holdInstall) return;
+    setInstalledNow(true);
+    setClonePhase("idle");
+  };
+
+  const installSkillForAccount = async (authorization?: string) => {
+    if (clonePhase === "busy" || clonePhase === "done") return false;
     const skillId = detail.listingId.trim();
     if (!skillId) {
       const message = "没有技能编号，不能安装。";
       setCloneNote(message);
       toast(message);
-      return;
+      return false;
     }
     setClonePhase("busy");
     setCloneNote("");
     try {
-      await installStoreSkill(skillId);
+      await installStoreSkill(skillId, authorization);
       setClonePhase("done");
       toast("已安装到当前账号");
+      return true;
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "安装失败。";
       if (/已安装|已经安装|already installed/i.test(message)) {
         setClonePhase("done");
         toast("已安装到当前账号");
-        return;
+        return true;
       }
       setClonePhase("idle");
       setCloneNote(message);
       toast(message);
+      return false;
     }
   };
 
-  const installAgentForAccount = async () => {
-    if (clonePhase === "busy" || clonePhase === "done") return;
+  const installAgentForAccount = async (authorization?: string) => {
+    if (clonePhase === "busy" || clonePhase === "done") return false;
     if (!/^[0-9a-f-]{36}$/i.test(detail.listingId)) {
       const message = "没有市场上架编号，不能安装。";
       setCloneNote(message);
       toast(message);
-      return;
+      return false;
     }
     setClonePhase("busy");
     setCloneNote("");
     try {
-      await addMarketListing(detail.listingId);
+      await addMarketListing(detail.listingId, authorization);
       setClonePhase("done");
       toast("已安装到当前账号");
+      return true;
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "安装失败。";
       if (/已安装|已经安装|already installed/i.test(message) && !/owner_cannot_install/i.test(message)) {
         setClonePhase("done");
         toast("已安装到当前账号");
-        return;
+        return true;
       }
       setClonePhase("idle");
       setCloneNote(message);
       toast(message);
+      return false;
+    }
+  };
+
+  const installNamedAccount = async (run: () => Promise<void>) => {
+    if (clonePhase === "busy" || clonePhase === "done") return false;
+    setClonePhase("busy");
+    setCloneNote("");
+    try {
+      await run();
+      setClonePhase("done");
+      toast("已安装到当前账号");
+      return true;
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : "安装失败。";
+      if (/已安装|已经安装|already installed/i.test(message)) {
+        setClonePhase("done");
+        toast("已安装到当前账号");
+        return true;
+      }
+      setClonePhase("idle");
+      setCloneNote(message);
+      toast(message);
+      return false;
+    }
+  };
+
+  const openAccountChat = () => {
+    if (!holdInstall || window.parent === window || toolId) return;
+    if (experienceChat) {
+      postToParent({
+        type: "blade-embed-open-chat",
+        service: "portal",
+        target: experienceChat.kind,
+        id: experienceChat.id,
+        name: experienceChat.name || detail.name,
+      });
+      return;
+    }
+    if (marketClone) {
+      postToParent({ type: "blade-embed-open-chat", service: "portal", target: "agents" });
     }
   };
 
   const cloneToConsole = async () => {
+    if (holdInstall && !portalInstallToken()) {
+      refuseInstall();
+      return;
+    }
+    const authorization = holdInstall ? portalInstallToken() : undefined;
     if (skillInstall) {
-      await installSkillForAccount();
+      if (await installSkillForAccount(authorization)) {
+        markPortalInstalled();
+        openAccountChat();
+      }
       return;
     }
     if (marketClone) {
-      await installAgentForAccount();
+      if (await installAgentForAccount(authorization)) {
+        markPortalInstalled();
+        openAccountChat();
+      }
+      return;
+    }
+    if (holdInstall && experienceChat?.kind === "knowledge") {
+      if (await installNamedAccount(() => installAccountKnowledge(experienceChat.id, authorization))) {
+        markPortalInstalled();
+        openAccountChat();
+      }
+      return;
+    }
+    if (holdInstall && experienceChat?.kind === "plugins") {
+      if (await installNamedAccount(() => installAccountPlugin(experienceChat.id, authorization))) {
+        markPortalInstalled();
+        openAccountChat();
+      }
       return;
     }
     toast("技能安装尚未接通。");
   };
 
-  const directUrl = experienceEmbed || experienceTopHref ? "" : detail.experienceUrl;
+  const uninstallFromAccount = async () => {
+    if (clonePhase === "busy") return;
+    if (holdInstall && !portalInstallToken()) {
+      refuseInstall();
+      return;
+    }
+    const authorization = holdInstall ? portalInstallToken() : undefined;
+    setClonePhase("busy");
+    setCloneNote("");
+    try {
+      if (skillInstall) await uninstallStoreSkill(detail.listingId, authorization);
+      else if (marketClone) await removeMarketListing(detail.listingId, authorization);
+      else if (experienceChat?.kind === "knowledge") await uninstallAccountKnowledge(experienceChat.id, authorization);
+      else if (experienceChat?.kind === "plugins") await uninstallAccountPlugin(experienceChat.id, authorization);
+      else {
+        setClonePhase("idle");
+        toast("这项不能卸载。");
+        return;
+      }
+      setInstalledNow(false);
+      setClonePhase("idle");
+      toast("已卸载");
+    } catch (reason) {
+      setClonePhase("idle");
+      const message = reason instanceof Error ? reason.message : "卸载失败。";
+      setCloneNote(message);
+      toast(message);
+    }
+  };
+
+  const embedded = experienceEmbed ?? bladeExperienceTarget(detail.experienceUrl);
+  const directUrl = embedded ? "" : detail.experienceUrl;
+  const portalExperienceLocked = holdInstall && !experienceChat && !toolId && !actorToken;
+  const experienceOn = Boolean(embedded) && params.get("experience") === "1" && !portalExperienceLocked;
+  const openExperience = () => {
+    if (holdInstall && !toolId && !portalInstallToken()) {
+      refuseInstall();
+      return;
+    }
+    if (experienceChat) {
+      postToParent({
+        type: "blade-embed-open-chat",
+        service: "portal",
+        target: experienceChat.kind,
+        id: experienceChat.id,
+        name: experienceChat.name || detail.name,
+      });
+      return;
+    }
+    const next = new URLSearchParams(params);
+    next.set("experience", "1");
+    setParams(next, { replace: true });
+  };
+
+  const testToolConnection = async () => {
+    const numeric = Number(toolId);
+    if (!Number.isInteger(numeric) || numeric <= 0) {
+      setToolTest("无法测试连接");
+      return;
+    }
+    setToolTest("正在测试连接…");
+    try {
+      const response = await fetch("/api-bh/api/resources/test", {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ id: numeric }),
+      });
+      const body = (await response.json().catch(() => null)) as { ok?: boolean | null; message?: string } | null;
+      if (!response.ok) {
+        setToolTest("连接失败");
+        return;
+      }
+      if (body?.ok === true) setToolTest("连接正常");
+      else if (body?.ok === null) setToolTest(body.message || "无需测试");
+      else setToolTest(body?.message ? `连接失败：${body.message}` : "连接失败");
+    } catch {
+      setToolTest("连接失败");
+    }
+  };
 
   const confirmAdd = async () => {
+    if (holdInstall && !portalInstallToken()) {
+      refuseInstall();
+      setConfirming(false);
+      return;
+    }
     if (!detail.canInstall || adding) return;
     setAdding(true);
     setAddError("");
     try {
-      await addMarketListing(detail.listingId);
+      await addMarketListing(detail.listingId, holdInstall ? portalInstallToken() : undefined);
       toast(`已添加「${detail.name}」`);
       setConfirming(false);
       onInstalled();
+      openAccountChat();
     } catch (reason) {
       setAddError(reason instanceof Error ? reason.message : "添加失败。");
     } finally {
@@ -341,36 +573,72 @@ export function AgentPortalDetail({
                 {subscribed ? "已订阅" : "订阅"}
               </button>
               <button
-                className={clonePhase === "done" ? "btn btn-primary" : "btn"}
+                className={clonePhase === "done" || (holdInstall && installedNow) ? "btn btn-primary" : "btn"}
                 type="button"
-                disabled={clonePhase === "busy"}
-                onClick={() => void cloneToConsole()}
+                disabled={clonePhase === "busy" || (!holdInstall && clonePhase === "done")}
+                onClick={() => {
+                  if (holdInstall && installedNow) {
+                    void uninstallFromAccount();
+                    return;
+                  }
+                  void cloneToConsole();
+                }}
               >
-                {clonePhase === "busy" ? "安装中…" : clonePhase === "done" ? "已安装" : "安装"}
+                {clonePhase === "busy" ? (installedNow ? "卸载中…" : "安装中…") : holdInstall && installedNow ? "卸载" : clonePhase === "done" ? "已安装" : "安装"}
               </button>
-              {detail.canInstall ? (
-                <button className="btn" type="button" onClick={() => setConfirming(true)}>
+              {detail.canInstall && !holdInstall ? (
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => {
+                    if (holdInstall && !portalInstallToken()) {
+                      refuseInstall();
+                      return;
+                    }
+                    setConfirming(true);
+                  }}
+                >
                   添加
                 </button>
               ) : null}
-              {/* 智能体没有 experienceTopHref，走 detail.experienceUrl 新开页。技能、知识库、工具、插件仍置灰。 */}
-              {directUrl ? (
-                <a className="btn" href={directUrl} target="_blank" rel="noopener noreferrer">
+              {experienceChat ? (
+                <button className="btn btn-primary" type="button" onClick={openExperience}>
+                  立即体验
+                </button>
+              ) : null}
+              {toolId ? (
+                <button className="btn" type="button" onClick={() => void testToolConnection()} disabled={toolTest === "正在测试连接…"}>
+                  测试连接
+                </button>
+              ) : null}
+              {!experienceChat && !toolId && embedded ? (
+                <button className="btn btn-primary" type="button" onClick={openExperience}>
+                  立即体验
+                </button>
+              ) : null}
+              {!toolId && directUrl ? (
+                <a
+                  className="btn btn-primary"
+                  href={directUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(event) => {
+                    if (!holdInstall || toolId || portalInstallToken()) return;
+                    event.preventDefault();
+                    refuseInstall();
+                  }}
+                >
                   立即体验
                 </a>
               ) : null}
-              {experienceTopHref ? (
-                <button className="btn" type="button" disabled>
-                  立即体验
-                </button>
-              ) : null}
-              {onExperience ? (
-                <button className="btn" type="button" disabled>
-                  立即体验
-                </button>
-              ) : null}
               {extra}
             </div>
+            {toolTest ? <p className="agent-clone-note">{toolTest}</p> : null}
+            {installNotice ? (
+              <p className="agent-install-pop" role="status">
+                请先登录
+              </p>
+            ) : null}
             {cloneNote ? (
               <p className="agent-clone-note is-error" role="alert">
                 {cloneNote}
@@ -446,6 +714,18 @@ export function AgentPortalDetail({
           </section>
         </aside>
         <section className="agent-main">
+          {experienceOn && embedded ? (
+            <div className="agent-experience-embed">
+              <BaEmbed
+                path={embedded.path}
+                title={detail.name}
+                variant="module"
+                frameOrigin={embedded.origin}
+                hideNav={false}
+                accessToken={holdInstall ? actorToken : undefined}
+              />
+            </div>
+          ) : null}
           <div className="agent-main-tabs" role="tablist">
             <button className={tab === "intro" ? "agent-main-tab is-active" : "agent-main-tab"} type="button" onClick={() => setTab("intro")}>
               <Icon name="book-2-line" size={16} />

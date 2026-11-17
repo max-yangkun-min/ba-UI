@@ -31,13 +31,16 @@ type BaEmbedProps = {
   onReady?: () => void;
   /** 左列跳转标签盖住侧栏顶部时，让内层只把侧栏内容下移。 */
   spaceTabs?: boolean;
+  /** 指定这张票交给内层。门户智能体体验用当前用户的票，不再去要超级管理员。 */
+  accessToken?: string;
 };
 
-export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", frameOrigin, hideNav, onReady, spaceTabs = false }: BaEmbedProps) {
+export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", frameOrigin, hideNav, onReady, spaceTabs = false, accessToken = "" }: BaEmbedProps) {
   const targetOrigin = (frameOrigin || origin).replace(/\/$/, "");
+  const pinnedToken = accessToken.trim();
   const [mode, setMode] = useState<EmbedMode>(targetOrigin ? "loading" : "fallback");
   const openedAs = currentPortalSession();
-  const tokenRef = useRef(openedAs?.mode === "user" ? openedAs.token : "");
+  const tokenRef = useRef(pinnedToken || (openedAs?.mode === "user" ? openedAs.token : ""));
   const pendingRef = useRef<Set<Window>>(new Set());
   const [frameNonce, setFrameNonce] = useState(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -49,6 +52,7 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
   const quiet = variant === "home";
   const [shown, setShown] = useState(!quiet);
   const [shellOn, setShellOn] = useState(false);
+  const [modalOn, setModalOn] = useState(false);
 
   useEffect(() => {
     if (!targetOrigin) return;
@@ -64,13 +68,16 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
 
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== targetOrigin) return;
-      const data = event.data as { type?: string; mode?: string; height?: number; ready?: boolean } | null;
+      const data = event.data as { type?: string; mode?: string; height?: number; ready?: boolean; open?: boolean } | null;
       if (!data) return;
       if (frameRef.current && event.source !== frameRef.current.contentWindow) return;
       if (data.type === "blade-embed-shell") {
         const ready = data.ready === true;
         setShellOn(ready);
         if (ready) setShown(true);
+      }
+      if (data.type === "blade-embed-modal") {
+        setModalOn(data.open === true);
       }
       if (data.type === "blade-embed-ready" || data.type === "blade-embed-resize") {
         applyEmbedHeight(frameRef.current, data.mode, data.height, variant);
@@ -104,25 +111,29 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
       if (child) deliver(child, token);
     };
 
-    whenPortalSession()
-      .then((session) => {
-        if (cancelled) return;
-        if (session.mode === "user") {
-          if (tokenRef.current === session.token) {
-            const child = frameRef.current?.contentWindow;
-            if (child) deliver(child, session.token);
-          } else {
-            publish(session.token);
-          }
-          return;
-        }
-        if (session.mode !== "admin") return;
-        return readEmbedAuth().then((token) => {
+    if (pinnedToken) {
+      publish(pinnedToken);
+    } else {
+      whenPortalSession()
+        .then((session) => {
           if (cancelled) return;
-          publish(token);
-        });
-      })
-      .catch(() => {});
+          if (session.mode === "user") {
+            if (tokenRef.current === session.token) {
+              const child = frameRef.current?.contentWindow;
+              if (child) deliver(child, session.token);
+            } else {
+              publish(session.token);
+            }
+            return;
+          }
+          if (session.mode !== "admin") return;
+          return readEmbedAuth().then((token) => {
+            if (cancelled) return;
+            publish(token);
+          });
+        })
+        .catch(() => {});
+    }
 
     return () => {
       cancelled = true;
@@ -132,7 +143,7 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
       shellWatch.current = null;
       window.removeEventListener("message", onMessage);
     };
-  }, [targetOrigin, variant]);
+  }, [targetOrigin, variant, pinnedToken]);
 
   useEffect(() => {
     if (!targetOrigin || mode === "fallback") onReadyRef.current?.();
@@ -162,6 +173,18 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
       frame.removeEventListener("load", post);
     };
   }, [spaceTabs, targetOrigin, mode]);
+
+  useEffect(() => {
+    if (!spaceTabs) return;
+    const frame = frameRef.current;
+    const head = frame?.closest(".embed-chat-space")?.querySelector(".embed-chat-space-head");
+    if (!(head instanceof HTMLElement)) return;
+    if (modalOn) head.setAttribute("inert", "");
+    else head.removeAttribute("inert");
+    return () => {
+      head.removeAttribute("inert");
+    };
+  }, [spaceTabs, modalOn, mode]);
 
   const grant = currentPortalSession();
   const frameAllowed = grant?.mode === "admin" || grant?.mode === "user";
@@ -197,6 +220,7 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
       const on = visibleNewChat(live);
       setShellOn(on);
       if (on) setShown(true);
+      setModalOn(visibleEmbedModal(live));
     };
     sync();
     const root = live.documentElement;
@@ -228,6 +252,7 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
         scrolling="no"
         data-quiet={quiet && !shown ? "1" : undefined}
         data-shell={spaceTabs ? (shellOn ? "1" : "0") : undefined}
+        data-modal={modalOn ? "1" : undefined}
         onLoad={(event) => {
           onReadyRef.current?.();
           const frame = event.currentTarget;
@@ -279,6 +304,44 @@ function applyEmbedHeight(frame: HTMLIFrameElement | null, mode: string | undefi
   frame.style.height = `${Math.ceil(height)}px`;
   frame.setAttribute("scrolling", "no");
   frame.style.overflow = "hidden";
+}
+
+function shownBox(node: Element, view: Window) {
+  if (!(node instanceof HTMLElement)) return false;
+  if (node.getAttribute("aria-hidden") === "true" || node.hasAttribute("hidden")) return false;
+  const style = view.getComputedStyle(node);
+  if (style.display === "none" || style.visibility === "hidden") return false;
+  if (Number.parseFloat(style.opacity || "1") === 0) return false;
+  const rect = node.getBoundingClientRect();
+  return rect.width >= 8 && rect.height >= 8;
+}
+
+/** 和内层插件同一套判断：对话框，或铺满视口的半透明遮罩。同源时父页面自己也能看见。 */
+function visibleEmbedModal(doc: Document) {
+  const view = doc.defaultView;
+  if (!view) return false;
+  const dialogs = doc.querySelectorAll("[role='dialog'], [role='alertdialog']");
+  for (const node of dialogs) {
+    if (shownBox(node, view)) return true;
+  }
+  const named = doc.querySelectorAll("[data-radix-dialog-overlay], [data-vaul-overlay]");
+  for (const node of named) {
+    if (shownBox(node, view)) return true;
+  }
+  const opens = doc.querySelectorAll("[data-state='open']");
+  for (const node of opens) {
+    if (!(node instanceof HTMLElement) || !node.className.includes("inset-0")) continue;
+    if (!shownBox(node, view)) continue;
+    const style = view.getComputedStyle(node);
+    if (style.position !== "fixed" && style.position !== "absolute") continue;
+    const rect = node.getBoundingClientRect();
+    if (view.innerWidth < 240 || view.innerHeight < 240) continue;
+    if (rect.width < view.innerWidth * 0.72 || rect.height < view.innerHeight * 0.72) continue;
+    const bg = style.backgroundColor;
+    if (!bg || bg === "transparent" || bg === "rgba(0, 0, 0, 0)") continue;
+    return true;
+  }
+  return false;
 }
 
 function visibleNewChat(doc: Document): boolean {

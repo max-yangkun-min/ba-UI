@@ -3,20 +3,13 @@ import { ToastProvider } from "./components/Toast";
 import { UserAuthGate } from "./lib/UserAuthGate";
 import { AppDevEmbedPage } from "./pages/AppDevEmbedPage";
 import { EmbedChatSpace } from "./pages/EmbedChatSpace";
-import { MockAgentCatalog } from "./pages/MockAgentCatalog";
 import { HomePage } from "./pages/HomePage";
 import { PromptEngineeringPage } from "./pages/PromptEngineeringPage";
-import { PromptTemplateCatalogPage } from "./pages/PromptTemplateCatalogPage";
-import { PromptTemplateDetailPage } from "./pages/PromptTemplateDetailPage";
-import { ResourceCatalogPage } from "./pages/ResourceCatalogPage";
-import { ResourceDetailPage } from "./pages/ResourceDetailPage";
 import "./styles/global.css";
 import "./styles/workbench.css";
 import "./styles/console.css";
 import "./styles/registry.css";
 import "./styles/prompts.css";
-import "./styles/resources.css";
-import "./styles/agent-portal.css";
 import "./styles/embed.css";
 
 export function App() {
@@ -28,16 +21,8 @@ export function App() {
           <Route path="/chat-workspace" element={<UserAuthGate><EmbedChatSpace mode="workspace" /></UserAuthGate>} />
           <Route path="/chat-admin" element={<UserAuthGate><EmbedChatSpace mode="admin" /></UserAuthGate>} />
           <Route path="/chat-general-admin" element={<UserAuthGate><EmbedChatSpace mode="general-admin" /></UserAuthGate>} />
-          <Route path="/resources/skills" element={<ResourceCatalogPage kind="skills" />} />
-          <Route path="/resources/knowledge" element={<ResourceCatalogPage kind="knowledge" />} />
-          <Route path="/resources/agents" element={<MockAgentCatalog />} />
-          <Route path="/resources/tools" element={<ResourceCatalogPage kind="tools" />} />
-          <Route path="/resources/plugins" element={<ResourceCatalogPage kind="plugins" />} />
-          <Route path="/resources/prompt-templates" element={<PromptTemplateCatalogPage />} />
-          <Route path="/resources/prompt-templates/:id" element={<PromptTemplateDetailPage />} />
           <Route path="/resources/prompts" element={<Navigate to="/console/app-dev/prompts" replace />} />
           <Route path="/resources/prompts/*" element={<Navigate to="/console/app-dev/prompts" replace />} />
-          <Route path="/resources/:kind/*" element={<ResourceDetailPage />} />
           <Route path="/console/app-dev/prompts/:scope/:id" element={<UserAuthGate><PromptEngineeringPage /></UserAuthGate>} />
           <Route path="/console/app-dev/prompts" element={<UserAuthGate><PromptEngineeringPage /></UserAuthGate>} />
           <Route path="/console/prompts" element={<Navigate to="/console/app-dev/prompts" replace />} />

@@ -1,22 +1,33 @@
 #!/usr/bin/env python3
 """Serve embed-app and reverse-proxy its API prefixes to local Blade ports.
 
-Access tickets are renewed on this host. /embed-auth and the local Blade
-proxy check the exp of EMBED_TOKEN. When less than an hour remains, or Blade
-Agent / Blade Hub returns 401 for that server ticket, the service exchanges
-EMBED_REFRESH_TOKEN at local Blade Agent POST /api/auth/refresh. That call
-rotates the refresh ticket, so the new access ticket and the new refresh
-ticket are written back to the proxy env file before another refresh can
-start. A missing refresh ticket does not drop a configured access ticket;
-the reason is logged.
+Access tickets are renewed on this host. /embed-auth and ordinary proxy
+calls that have no caller ticket still check the exp of EMBED_TOKEN. When
+less than an hour remains, or Blade Agent / Blade Hub returns 401 for that
+server ticket, the service exchanges EMBED_REFRESH_TOKEN at local Blade
+Agent POST /api/auth/refresh. That call rotates the refresh ticket, so the
+new access ticket and the new refresh ticket are written back to the proxy
+env file before another refresh can start. A missing refresh ticket does
+not drop a configured access ticket; the reason is logged.
+
+Portal catalog reads, portal install/add, and the reads used to open an
+experience send X-Blade-Portal-Catalog: 1. Those requests drop the caller
+ticket. If the server access ticket is missing, near expiry, or Blade
+rejects it, this process logs in again with EMBED_USERNAME / EMBED_PASSWORD
+(defaults are in this file). Login follows the 8020 redirect to the auth
+service: GET /api/v1/crypto/pubkey, then POST /api/v1/auth/login. The new
+access ticket is written back. A new refresh ticket is written only when
+login actually returns one. The next failure logs in with the account
+again and does not depend on the refresh ticket just written.
 
 If the caller sends Authorization: Bearer, /api-ba, /api-bh, /api-bos,
-/api-llm and /api/catalog-counts forward that ticket and do not replace it
-with EMBED_TOKEN. Requests without a caller ticket still use EMBED_TOKEN.
-Batch delete never falls back to EMBED_TOKEN.
+/api-llm and /api/catalog-counts forward that ticket and do not replace it.
+Other writes keep the caller ticket. Batch delete never falls back to
+EMBED_TOKEN. Chat, /embed-auth, and blade-embed-logout are unchanged.
 """
 
 import base64
+import hashlib
 import json
 import os
 import posixpath
@@ -25,7 +36,7 @@ import sys
 import tempfile
 import threading
 import time
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 import http.client
 
@@ -58,8 +69,11 @@ REFRESH_COOKIE = "blade_refresh_token"
 REFRESH_PATH = "/api/auth/refresh"
 # 距过期不足 1 小时就续期，已过期同样续期。上游 401 不等到这一小时。
 REFRESH_WITHIN_SECONDS = 3600
-# 刚换过票仍被拒绝时，不要每个请求都轮换一次一次性刷新票。
+# 刚换过票仍被拒绝时，不要每个请求都轮换一次一次性刷新票，也不要连续打登录。
 REFRESH_COOLDOWN_SECONDS = 60
+# 门户目录换票用的固定账号。进程环境或凭据文件里的 EMBED_USERNAME / EMBED_PASSWORD 可以覆盖。
+DEFAULT_USERNAME = "superadmin"
+DEFAULT_PASSWORD = "superadmin123"
 # 只有这两端口的 401 表示访问票被 Blade 拒绝。其它反代的 401 不换票。
 BLADE_AUTH_PORTS = (8020, 8010)
 
@@ -68,6 +82,11 @@ _refresh_lock = threading.Lock()
 _pending = None
 _last_attempt_at = 0.0
 _last_failure = ""
+_portal_pending = None
+_portal_last_attempt_at = 0.0
+_portal_last_failure = ""
+_portal_expires_at = 0.0
+_auth_origin = ""
 _logged = set()
 
 
@@ -333,7 +352,7 @@ def upsert_line(lines, key, value):
     return output
 
 
-def write_tokens(path, access, refresh):
+def write_tokens(path, access, refresh, expires_at=None):
     mode = 0o600
     original = ""
     if os.path.isfile(path):
@@ -341,7 +360,10 @@ def write_tokens(path, access, refresh):
         with open(path, encoding="utf-8") as handle:
             original = handle.read()
     lines = upsert_line(original.splitlines(), "EMBED_TOKEN", access)
-    lines = upsert_line(lines, "EMBED_REFRESH_TOKEN", refresh)
+    if refresh:
+        lines = upsert_line(lines, "EMBED_REFRESH_TOKEN", refresh)
+    if expires_at:
+        lines = upsert_line(lines, "EMBED_ACCESS_EXPIRES_AT", str(int(expires_at)))
     text = "\n".join(lines)
     if not text.endswith("\n"):
         text += "\n"
@@ -393,6 +415,211 @@ def cookie_value(text, name):
         if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "\"'":
             raw = raw[1:-1]
         return raw
+
+
+def portal_account():
+    """进程环境优先，其次凭据文件，最后用代码里的固定账号。"""
+    try:
+        values = read_env(token_path())
+    except (OSError, UnicodeError, TokenError):
+        values = {}
+    username = os.environ.get("EMBED_USERNAME", "").strip() or values.get("EMBED_USERNAME", "").strip()
+    password = os.environ.get("EMBED_PASSWORD", "") or values.get("EMBED_PASSWORD", "")
+    return username or DEFAULT_USERNAME, password or DEFAULT_PASSWORD
+
+
+def _der_len(data, index):
+    first = data[index]
+    index += 1
+    if first < 0x80:
+        return first, index
+    count = first & 0x7F
+    if count == 0 or count > 4:
+        raise TokenError("登录公钥无法解析")
+    length = int.from_bytes(data[index:index + count], "big")
+    return length, index + count
+
+
+def _der_tlv(data, index):
+    if index >= len(data):
+        raise TokenError("登录公钥无法解析")
+    tag = data[index]
+    index += 1
+    length, index = _der_len(data, index)
+    end = index + length
+    if end > len(data):
+        raise TokenError("登录公钥无法解析")
+    return tag, data[index:end], end
+
+
+def _rsa_public(pem):
+    body = "".join(line.strip() for line in pem.splitlines() if line.strip() and "-----" not in line)
+    try:
+        der = base64.b64decode(body)
+    except (ValueError, TypeError):
+        raise TokenError("登录公钥无法解析")
+    tag, spki, _ = _der_tlv(der, 0)
+    if tag != 0x30:
+        raise TokenError("登录公钥无法解析")
+    tag, _algorithm, cursor = _der_tlv(spki, 0)
+    if tag != 0x30:
+        raise TokenError("登录公钥无法解析")
+    tag, bit, _ = _der_tlv(spki, cursor)
+    if tag != 0x03 or not bit or bit[0] != 0:
+        raise TokenError("登录公钥无法解析")
+    tag, seq, _ = _der_tlv(bit, 1)
+    if tag != 0x30:
+        raise TokenError("登录公钥无法解析")
+    tag, modulus, cursor = _der_tlv(seq, 0)
+    if tag != 0x02:
+        raise TokenError("登录公钥无法解析")
+    tag, exponent, _ = _der_tlv(seq, cursor)
+    if tag != 0x02:
+        raise TokenError("登录公钥无法解析")
+    return int.from_bytes(modulus, "big"), int.from_bytes(exponent, "big")
+
+
+def _mgf1(seed, length):
+    output = b""
+    counter = 0
+    while len(output) < length:
+        output += hashlib.sha256(seed + counter.to_bytes(4, "big")).digest()
+        counter += 1
+    return output[:length]
+
+
+def _encrypt_password(public_key, password):
+    """与认证桥相同：RSA-OAEP-SHA256 加密 {"p":"<口令>"}，再做成无填充 base64url。"""
+    modulus, exponent = _rsa_public(public_key)
+    message = json.dumps({"p": password}, separators=(",", ":")).encode("utf-8")
+    size = (modulus.bit_length() + 7) // 8
+    hash_len = 32
+    if len(message) > size - 2 * hash_len - 2:
+        raise TokenError("登录口令无法加密")
+    label_hash = hashlib.sha256(b"").digest()
+    padding = b"\x00" * (size - len(message) - 2 * hash_len - 2)
+    data_block = label_hash + padding + b"\x01" + message
+    seed = os.urandom(hash_len)
+    data_mask = _mgf1(seed, size - hash_len - 1)
+    masked_data = bytes(left ^ right for left, right in zip(data_block, data_mask))
+    seed_mask = _mgf1(masked_data, hash_len)
+    masked_seed = bytes(left ^ right for left, right in zip(seed, seed_mask))
+    encoded = b"\x00" + masked_seed + masked_data
+    cipher = pow(int.from_bytes(encoded, "big"), exponent, modulus)
+    return base64.urlsafe_b64encode(cipher.to_bytes(size, "big")).decode("ascii").rstrip("=")
+
+
+def _origin_from_location(location):
+    parts = urlsplit(location or "")
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return ""
+    origin = "%s://%s" % (parts.scheme, parts.hostname)
+    if parts.port:
+        origin += ":%s" % parts.port
+    return origin
+
+
+def _http_json(method, origin, path, payload=None):
+    parts = urlsplit(origin)
+    host = parts.hostname or ""
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    if not host:
+        raise TokenError("无法连接认证服务")
+    body = None if payload is None else json.dumps(payload).encode("utf-8")
+    headers = {"Accept": "application/json"}
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+    conn = http.client.HTTPConnection(host, port, timeout=20)
+    try:
+        try:
+            conn.request(method, path, body=body, headers=headers)
+            resp = conn.getresponse()
+            raw = resp.read()
+            status = resp.status
+            cookies = parse_set_cookies(resp)
+        except http.client.HTTPException:
+            raise TokenError("无法连接认证服务")
+        except OSError:
+            raise TokenError("无法连接认证服务")
+    finally:
+        conn.close()
+    try:
+        data = json.loads(raw.decode("utf-8")) if raw else None
+    except (UnicodeError, ValueError):
+        data = None
+    if not isinstance(data, dict):
+        data = {}
+    return status, data, cookies
+
+
+def auth_origin():
+    """8020 的 GET /api/auth/login 会 302 到认证服务。只取来源，不跟随跳转。"""
+    global _auth_origin
+    override = os.environ.get("EMBED_AUTH_BASE", "").strip().rstrip("/")
+    if not override:
+        try:
+            override = read_env(token_path()).get("EMBED_AUTH_BASE", "").strip().rstrip("/")
+        except (OSError, UnicodeError, TokenError):
+            override = ""
+    if override:
+        return override
+    if _auth_origin:
+        return _auth_origin
+    host, port = refresh_target()
+    conn = http.client.HTTPConnection(host, port, timeout=20)
+    try:
+        try:
+            nxt = quote("http://%s:%s/" % (host, port), safe="")
+            conn.request("GET", "/api/auth/login?next=" + nxt, headers={"Accept": "application/json"})
+            resp = conn.getresponse()
+            location = resp.getheader("Location") or ""
+            resp.read()
+        except http.client.HTTPException:
+            raise TokenError("无法连接本机 %s 的 /api/auth/login" % port)
+        except OSError:
+            raise TokenError("无法连接本机 %s 的 /api/auth/login" % port)
+    finally:
+        conn.close()
+    origin = _origin_from_location(location)
+    if not origin:
+        raise TokenError("登录入口没有返回认证服务地址")
+    _auth_origin = origin
+    return origin
+
+
+def exchange_login(username, password):
+    """认证服务登录。成功正文给出 access_token；有刷新票才返回第二项。"""
+    origin = auth_origin()
+    status, data, _cookies = _http_json("GET", origin, "/api/v1/crypto/pubkey")
+    public_key = data.get("public_key") if status == 200 else ""
+    kid = data.get("kid") if status == 200 else ""
+    if not isinstance(public_key, str) or not public_key or not isinstance(kid, str) or not kid:
+        raise TokenError("认证服务没有返回登录公钥")
+    status, data, cookies = _http_json(
+        "POST",
+        origin,
+        "/api/v1/auth/login",
+        {
+            "username": username,
+            "password_enc": _encrypt_password(public_key, password),
+            "enc_kid": kid,
+        },
+    )
+    access = data.get("access_token") if isinstance(data.get("access_token"), str) else ""
+    if not access:
+        access = cookies.get(ACCESS_COOKIE, "")
+    refresh = data.get("refresh_token") if isinstance(data.get("refresh_token"), str) else ""
+    if not refresh:
+        refresh = cookies.get(REFRESH_COOKIE, "")
+    if status != 200 or not acceptable_secret(access):
+        raise TokenError("账号登录失败")
+    if refresh and not acceptable_secret(refresh):
+        refresh = ""
+    expires_in = data.get("expires_in")
+    expires_at = None
+    if isinstance(expires_in, (int, float)) and not isinstance(expires_in, bool) and expires_in > 0:
+        expires_at = time.time() + float(expires_in)
+    return access, refresh, expires_at
 
 
 def exchange_refresh(refresh_token):
@@ -517,6 +744,115 @@ def _ensure_in_lock(path, force, rejected):
             return access
         raise
     return _store_rotated(path, new_access, new_refresh)
+
+
+def ensure_portal_access():
+    """门户目录自己的票。缺失、快过期时用固定账号重登，不靠刷新票。"""
+    with _refresh_lock:
+        return _ensure_portal_locked(False, "")
+
+
+def portal_login_after_rejection(rejected):
+    """门户请求被 401 拒绝后用账号再登。刚写下的刷新票不算下一张可用票。"""
+    with _refresh_lock:
+        return _ensure_portal_locked(True, rejected)
+
+
+def _saved_portal_expiry(path, token):
+    if access_exp(token) is not None:
+        return 0.0
+    try:
+        raw = read_env(path).get("EMBED_ACCESS_EXPIRES_AT", "").strip()
+    except (OSError, UnicodeError):
+        return 0.0
+    try:
+        value = float(raw)
+    except ValueError:
+        return 0.0
+    return value if value > 0 else 0.0
+
+
+def _portal_exp(token):
+    exp = access_exp(token)
+    if exp is not None:
+        return exp
+    return _portal_expires_at or None
+
+
+def _portal_needs_renewal(token, now=None):
+    exp = _portal_exp(token)
+    if exp is None:
+        return False
+    if now is None:
+        now = time.time()
+    return exp - now < REFRESH_WITHIN_SECONDS
+
+
+def _portal_expired(token, now=None):
+    exp = _portal_exp(token)
+    if exp is None:
+        return False
+    if now is None:
+        now = time.time()
+    return exp <= now
+
+
+def _store_portal(path, access, refresh, expires_at=None):
+    global _portal_pending, _portal_last_failure, _portal_expires_at
+    if expires_at:
+        _portal_expires_at = float(expires_at)
+    _portal_pending = (access, refresh, _portal_expires_at or None)
+    try:
+        write_tokens(path, access, refresh, _portal_expires_at or None)
+    except OSError:
+        raise TokenError("已换到新票，但写回凭据文件失败。下次请求会重试写回，不会再次登录")
+    _portal_pending = None
+    _portal_last_failure = ""
+    clear_token_log("login-failed")
+    log_token("logged in with configured account and wrote access token")
+    return access
+
+
+def _ensure_portal_locked(force, rejected):
+    path = token_path()
+    with EnvLock(path):
+        return _ensure_portal_in_lock(path, force, rejected)
+
+
+def _ensure_portal_in_lock(path, force, rejected):
+    global _portal_pending, _portal_last_attempt_at, _portal_last_failure, _portal_expires_at
+    if _portal_pending is not None:
+        access, refresh, expires_at = _portal_pending
+        return _store_portal(path, access, refresh, expires_at)
+    access, refresh = configured_tokens(path)
+    if not _portal_expires_at:
+        _portal_expires_at = _saved_portal_expiry(path, access)
+    if force and rejected and access and access != rejected and not _portal_needs_renewal(access):
+        return access
+    if access and not _portal_needs_renewal(access) and not (force and rejected and access == rejected):
+        return access
+    if (
+        _portal_last_failure
+        and _portal_last_attempt_at
+        and time.time() - _portal_last_attempt_at < REFRESH_COOLDOWN_SECONDS
+    ):
+        log_token_once("login-cooldown", "account login skipped during cooldown")
+        if access and (force or not _portal_expired(access)):
+            return access
+        raise TokenError(_portal_last_failure)
+    _portal_last_attempt_at = time.time()
+    username, password = portal_account()
+    try:
+        new_access, new_refresh, expires_at = exchange_login(username, password)
+    except TokenError as exc:
+        _portal_last_failure = str(exc)
+        if access and (force or not _portal_expired(access)):
+            log_token_once("login-failed", _portal_last_failure)
+            return access
+        raise
+    if not new_refresh:
+        new_refresh = refresh
+    return _store_portal(path, new_access, new_refresh, expires_at)
 
 
 def rooted(root, path):
@@ -731,6 +1067,58 @@ def valid_session_id(value):
     return True
 
 
+def _query_value(query, key):
+    values = parse_qs(query, keep_blank_values=False).get(key) or []
+    return values[0] if values else ""
+
+
+def portal_catalog_request(method, raw_path, header):
+    """门户展示。列表和详情只认 GET/HEAD。安装和添加不换超级管理员，沿用调用方的票。"""
+    if not isinstance(header, str) or header.strip() != "1":
+        return False
+    parts = urlsplit(raw_path or "")
+    path = parts.path.rstrip("/") or "/"
+    if method == "POST":
+        if path == "/api-bh/api/resources/test":
+            return True
+        return False
+    if method not in ("GET", "HEAD"):
+        return False
+    if path == "/api-ba/api/skill-store/catalog":
+        return True
+    if path == "/api-ba/api/registry/kb":
+        return _query_value(parts.query, "scope") == "market"
+    if re.fullmatch(r"/api-ba/api/registry/kb/[^/]+", path):
+        return True
+    if path == "/api-ba/api/market-publish/listings":
+        return True
+    if path == "/api-ba/api/published-apps":
+        return True
+    if re.fullmatch(r"/api-ba/api/published-apps/[^/]+", path):
+        return True
+    if path == "/api-bh/api/resources":
+        return _query_value(parts.query, "type") == "tool"
+    if re.fullmatch(r"/api-bh/api/resources/[^/]+", path):
+        return True
+    if path == "/api-bh/api/plugins":
+        return True
+    if re.fullmatch(r"/api-bh/api/plugins/[^/]+", path):
+        return True
+    if re.fullmatch(r"/api-bh/api/skills/[^/]+/[^/]+", path):
+        return True
+    if path == "/api-bos/api/v1/market/listings":
+        return True
+    if re.fullmatch(r"/api-bos/api/v1/market/listings/[^/]+", path):
+        return True
+    if re.fullmatch(r"/api-bos/api/v1/market/listings/[^/]+/screenshots/[^/]+/image", path):
+        return True
+    if path == "/api-bos/api/v1/market/installed":
+        return True
+    if path == "/api/catalog-counts":
+        return True
+    return False
+
+
 def caller_bearer(header):
     """只认调用方带来的 Bearer。空的、非法的都不回落到服务端访问票。"""
     if not isinstance(header, str):
@@ -847,14 +1235,17 @@ def delete_upstream_session(host, port, session_id, delete_workspace, token):
     return status, _upstream_error_text(status, data)
 
 
-def public_catalog_counts(token, allow_refresh=True):
+def public_catalog_counts(token, allow_refresh=True, portal=False):
     counts = _collect_catalog_counts(token)
     if counts is not None:
         return counts
     if not allow_refresh:
         raise CatalogError()
     try:
-        refreshed = refresh_after_rejection(token)
+        if portal:
+            refreshed = portal_login_after_rejection(token)
+        else:
+            refreshed = refresh_after_rejection(token)
     except TokenError:
         refreshed = ""
     if not refreshed or refreshed == token:
@@ -871,7 +1262,7 @@ class EmbedHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         path = urlsplit(self.path).path
-        if path == "/blade-site.js":
+        if path == "/blade-site.js" or path == "/portal-login.js":
             self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Security-Policy", CSP)
         super().end_headers()
@@ -921,6 +1312,9 @@ class EmbedHandler(SimpleHTTPRequestHandler):
         # 配置文件必须按 JS 返回。找不到时 404，不能改写成 index.html。
         if path == "/blade-site.js":
             self._serve_exact("blade-site.js", "application/javascript; charset=utf-8")
+            return
+        if path == "/portal-login.js":
+            self._serve_exact("portal-login.js", "application/javascript; charset=utf-8")
             return
         self._serve_spa(path)
 
@@ -1008,13 +1402,16 @@ class EmbedHandler(SimpleHTTPRequestHandler):
         if self.command not in ("GET", "HEAD"):
             self.send_error(405)
             return
-        caller = caller_bearer(self.headers.get("Authorization"))
+        portal = portal_catalog_request(
+            self.command, self.path, self.headers.get("X-Blade-Portal-Catalog")
+        )
+        caller = "" if portal else caller_bearer(self.headers.get("Authorization"))
         allow_refresh = False
         if caller:
             token = caller
         else:
             try:
-                token = ensure_access_token()
+                token = ensure_portal_access() if portal else ensure_access_token()
             except TokenError as exc:
                 log_token(str(exc))
                 self._auth_json(503, {"error": "catalog unavailable"}, public=True)
@@ -1024,7 +1421,7 @@ class EmbedHandler(SimpleHTTPRequestHandler):
             self._auth_json(503, {"error": "catalog unavailable"}, public=True)
             return
         try:
-            counts = public_catalog_counts(token, allow_refresh)
+            counts = public_catalog_counts(token, allow_refresh, portal)
         except CatalogError:
             self._auth_json(502, {"error": "catalog unavailable"}, public=True)
             return
@@ -1112,13 +1509,16 @@ class EmbedHandler(SimpleHTTPRequestHandler):
 
     def _proxy(self, prefix, host, port):
         length = int(self.headers.get("Content-Length") or 0)
-        caller = caller_bearer(self.headers.get("Authorization"))
+        portal = portal_catalog_request(
+            self.command, self.path, self.headers.get("X-Blade-Portal-Catalog")
+        )
+        caller = "" if portal else caller_bearer(self.headers.get("Authorization"))
         owned = False
         if caller:
             token = caller
         else:
             try:
-                token = ensure_access_token()
+                token = ensure_portal_access() if portal else ensure_access_token()
             except TokenError as exc:
                 if length:
                     self.rfile.read(length)
@@ -1133,9 +1533,12 @@ class EmbedHandler(SimpleHTTPRequestHandler):
         except OSError:
             self._bad_gateway()
             return
-        if status == 401 and owned and token and port in BLADE_AUTH_PORTS:
+        if status == 401 and owned and token and (portal or port in BLADE_AUTH_PORTS):
             try:
-                refreshed = refresh_after_rejection(token)
+                if portal:
+                    refreshed = portal_login_after_rejection(token)
+                else:
+                    refreshed = refresh_after_rejection(token)
             except TokenError as exc:
                 log_token(str(exc))
                 refreshed = ""

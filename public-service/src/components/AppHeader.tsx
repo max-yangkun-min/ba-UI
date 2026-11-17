@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { resourceNav } from "../data/resource-nav";
 import { useLabAuth } from "../lib/lab-auth";
 import { Icon } from "./Icon";
 import { useToast } from "./Toast";
@@ -44,11 +43,6 @@ export function AppHeader() {
         <NavLink to="/chat-general-admin" className={({ isActive }) => (isActive ? "on" : undefined)}>
           普通管理
         </NavLink>
-        {resourceNav.map((item) => (
-          <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "on" : undefined)}>
-            {item.label}
-          </NavLink>
-        ))}
         <NavLink to="/console" className={({ isActive }) => (isActive ? "on" : undefined)}>
           控制台
         </NavLink>
@@ -84,7 +78,7 @@ export function AppHeader() {
             </div>
           ) : null}
         </div>
-        <div className="menu-anchor" onClick={(event) => event.stopPropagation()}>
+        <div className={import.meta.env.DEV ? "menu-anchor lab-session" : "menu-anchor"} onClick={(event) => event.stopPropagation()}>
           <button
             className="user-chip"
             type="button"
@@ -110,6 +104,10 @@ export function AppHeader() {
                 <button
                   type="button"
                   onClick={() => {
+                    if (import.meta.env.DEV) {
+                      navigate("/login-test");
+                      return;
+                    }
                     logout();
                     navigate("/");
                   }}
@@ -121,6 +119,10 @@ export function AppHeader() {
               <button
                 type="button"
                 onClick={() => {
+                  if (!session && import.meta.env.DEV) {
+                    navigate("/login-test");
+                    return;
+                  }
                   logout();
                   navigate("/");
                 }}

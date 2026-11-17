@@ -1,6 +1,6 @@
 # 智能模型公共服务平台（集成壳）
 
-顶栏、控制台侧栏和占位模块留在这里。门户、资源列表、智能体详情、提示词工程和应用开发的页面内容是 iframe，指向虚拟机上的嵌入页。地址来自 `VITE_EMBED_ORIGIN`，示例见 `.env.example`。连接清单见 `D:\workspaces\zny\codes\集成说明.md`。
+顶栏、控制台侧栏和占位模块留在这里。对话页在本壳打开。应用开发和提示词工程的内容区是 iframe，指向嵌入页。门户资源目录已移交到 `deliver/portal-handoff/`。地址来自 `VITE_EMBED_ORIGIN`，示例见 `.env.example`。连接清单见 `D:\workspaces\zny\codes\集成说明.md`。
 
 ```bash
 cd D:\workspaces\zny\codes\public-service

@@ -119,26 +119,41 @@ export function dedupeAgentLists(input: Pick<AgentBundle, "listings" | "installe
   return { listings, installed, published };
 }
 
-export async function addMarketListing(id: string): Promise<void> {
-  const result = await readJson(`/api-bos/api/v1/market/listings/${encodeURIComponent(id)}/install`, "POST");
+export async function addMarketListing(id: string, authorization?: string): Promise<void> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (authorization) headers.Authorization = `Bearer ${authorization}`;
+  const result = await readJson(`/api-bos/api/v1/market/listings/${encodeURIComponent(id)}/install`, "POST", headers);
   if (result.error) throw new Error(result.error);
 }
 
-async function readJson(path: string, method: "GET" | "POST" = "GET"): Promise<{ body: unknown; error: string }> {
+/** 市场上架卸载：DELETE 同一条 /install。404 表示当前用户本来就没装。 */
+export async function removeMarketListing(id: string, authorization?: string): Promise<void> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (authorization) headers.Authorization = `Bearer ${authorization}`;
+  const result = await readJson(`/api-bos/api/v1/market/listings/${encodeURIComponent(id)}/install`, "DELETE", headers);
+  if (result.status === 404) return;
+  if (result.error) throw new Error(result.error);
+}
+
+async function readJson(
+  path: string,
+  method: "GET" | "POST" | "DELETE" = "GET",
+  headers: HeadersInit = { Accept: "application/json" },
+): Promise<{ body: unknown; error: string; status: number }> {
   let response: Response;
   try {
     response = await fetch(path, {
       method,
-      headers: { Accept: "application/json" },
+      headers,
       cache: "no-store",
     });
   } catch {
-    return { body: null, error: "无法连接后台。请确认本机开发服务已启动，并且虚拟机可以访问。" };
+    return { body: null, error: "无法连接后台。请确认本机开发服务已启动，并且虚拟机可以访问。", status: 0 };
   }
   const text = await response.text();
   const body = parseBody(text);
-  if (!response.ok || isHtml(body)) return { body, error: explainFailure(response.status, body) };
-  return { body, error: "" };
+  if (!response.ok || isHtml(body)) return { body, error: explainFailure(response.status, body), status: response.status };
+  return { body, error: "", status: response.status };
 }
 
 export function explainFailure(status: number, body: unknown) {

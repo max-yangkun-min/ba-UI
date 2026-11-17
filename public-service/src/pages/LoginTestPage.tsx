@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { LAB_USERS, useLabAuth } from "../lib/lab-auth";
 
 type StepLog = {
   key: string;
@@ -75,6 +77,8 @@ function upsert(logs: StepLog[], next: StepLog): StepLog[] {
 }
 
 export function LoginTestPage() {
+  const navigate = useNavigate();
+  const lab = useLabAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("user");
@@ -264,13 +268,24 @@ export function LoginTestPage() {
   }
 
   const showShadowLine = authMeOk && skillsStatus === 503;
+  const held = busy || lab.busy;
+
+  async function enterLab(name: string) {
+    const ok = await lab.enterAs(name);
+    if (ok) navigate("/");
+  }
+
+  async function loginAndOpen() {
+    const ok = await lab.loginWithPassword(username, password);
+    if (ok) navigate("/");
+  }
 
   return (
     <div className="login-test-page">
       <div className="page-head">
         <div>
           <h1>用户登录测试</h1>
-          <p>注册大系统用户、登录、换成平台令牌，再查询智能体服务上的身份。令牌只显示首尾各 8 位。</p>
+          <p>注册大系统用户、登录、换成平台令牌，再查询智能体服务上的身份。令牌只显示首尾各 8 位。进入对话后，嵌入页沿用同一张平台 JWT。</p>
         </div>
       </div>
 
@@ -309,20 +324,41 @@ export function LoginTestPage() {
           </div>
         </div>
         <div className="page-actions">
-          <button className="btn btn-primary" type="button" disabled={!canSubmit || busy} onClick={() => void registerUser()}>
+          <button className="btn btn-primary" type="button" disabled={!canSubmit || held} onClick={() => void registerUser()}>
             注册
           </button>
-          <button className="btn" type="button" disabled={!canSubmit || busy} onClick={() => void loginUser()}>
+          <button className="btn" type="button" disabled={!canSubmit || held} onClick={() => void loginUser()}>
             登录
           </button>
-          <button className="btn" type="button" disabled={!customerToken || busy} onClick={() => void exchangeToken()}>
+          <button className="btn" type="button" disabled={!customerToken || held} onClick={() => void exchangeToken()}>
             换票
           </button>
-          <button className="btn" type="button" disabled={!platformToken || busy} onClick={() => void queryPlatform()}>
+          <button className="btn" type="button" disabled={!platformToken || held} onClick={() => void queryPlatform()}>
             查询平台身份
+          </button>
+          <button className="btn btn-primary" type="button" disabled={!canSubmit || held} onClick={() => void loginAndOpen()}>
+            登录并进入对话
           </button>
         </div>
         {error ? <p className="login-test-error">{error}</p> : null}
+        {lab.error ? <p className="login-test-error">{lab.error}</p> : null}
+      </section>
+
+      <section className="panel">
+        <h2>实验室账号</h2>
+        <p>换成带 bo 用户 id 的平台 JWT，再用和正式集成一样的 postMessage 交给嵌入页。</p>
+        <div className="page-actions">
+          {LAB_USERS.map((name) => (
+            <button key={name} className="btn" type="button" disabled={held} onClick={() => void enterLab(name)}>
+              {name} 进入对话
+            </button>
+          ))}
+          {lab.session ? (
+            <button className="btn" type="button" onClick={() => navigate("/")}>
+              打开当前对话（{lab.session.username}）
+            </button>
+          ) : null}
+        </div>
       </section>
 
       <section className="panel" aria-live="polite">

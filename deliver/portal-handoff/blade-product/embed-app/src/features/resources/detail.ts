@@ -223,7 +223,8 @@ function present(row: Record<string, unknown>): ResourceDetail {
     canInstall: canInstallOf(row, listingId),
     // 只有 installed 表示当前账号已经装过。is_owner 是发布者，不是已安装，安装按钮仍要打安装接口。
     marketInstalled: /^[0-9a-f-]{36}$/i.test(listingId) && row.installed === true,
-    installed: row.is_installed === true,
+    // 技能商店用 is_installed。知识库、插件用 installed。没带用户票时这是超级管理员的状态。
+    installed: row.is_installed === true || row.installed === true,
     experienceUrl: httpUrl(row.service_url) || httpUrl(row.url) || httpUrl(row.public_url),
     scene: sectionText(description, "适用场景") || MISSING,
     department: sectionText(description, "使用部门") || MISSING,
