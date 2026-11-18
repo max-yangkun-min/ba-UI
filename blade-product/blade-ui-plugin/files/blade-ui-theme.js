@@ -202,7 +202,7 @@
     var buttons = document.querySelectorAll("button");
     for (var i = 0; i < buttons.length; i += 1) {
       var el = buttons[i];
-      if (el.closest("#blade-ui-skill-cats")) continue;
+      if (el.closest("#blade-ui-skill-cats") || el.closest("#blade-ui-skill-pager")) continue;
       if (isSkillStoreCard(el)) {
         el.removeAttribute("data-blade-ui-btn");
         el.setAttribute("data-blade-ui-card", "true");
@@ -404,6 +404,7 @@
   // 0.2.89 技能分类。商店条目有 category 就用原字段；同 slug 已有原字段时，空的跟它。
   // 仍然空的不再请求，按 id 末段的固定表，对不上再看名称和描述里的关键词。
   // 分类条在 body 上的 #blade-ui-skill-cats，点击只改卡片属性，不调用 paint。
+  // 分页条跟在卡片网格后面。搜索、安装状态或分类一变就回到第 1 页；不满两页不显示。
   var SKILL_CAT_GROUPS = {
     "作战推演": ["hang-mu-bian-dui-fan-qian-jing-jie-sou-suo", "hang-mu-bian-dui-duo-zhou-fan-jian-bao-he-da-ji", "hang-mu-bian-dui-fang-kong-fan-dao-zhen-xing-you-hua", "jian-li-mu-biao-yun-dong-bu-que-ding-xing-mo-xing", "sou-cha-qu-yu-hua-fen-lu-xian-she-ji", "wu-ren-qian-hang-qi-fu-ji-ren-wu-jue-ce-liu-cheng", "huan-jing-shu-ju-die-jia", "hang-du-gui-hua", "xiang-ding-sheng-cheng", "zhi-neng-lan-jun", "hui-shang-ping-gu", "sheng-cun-neng-li-fen-xi", "sheng-cheng-zuo-zhan-jue-xin", "hong-fang-xing-dong-sheng-cheng", "fu-zhu-xia-ding-jue-xin"],
     "文档处理": ["word-sheng-cheng-yu-bian-ji", "docx", "pdf", "ge-shi-xiu-fu", "ge-shi-zhuan-huan", "gong-wen-chu-li", "lun-wen-pai-ban", "shi-juan-pai-ban", "mu-ban-tao-da", "shuang-yu-wen-dang", "wen-dang-shui-yin", "wen-gao-jiao-dui", "yan-shi-zhuai-wen-gao", "dian-zi-yin-zhang", "zheng-shu-jiang-zhuang", "zhong-wen-jian-li"],
@@ -454,6 +455,10 @@
   var skillQueryClient = null;
   var skillCatCacheText = "";
   var skillCatCacheRows = null;
+  var SKILL_PAGE_SIZE = 9;
+  var skillPage = 1;
+  var skillPageSig = "";
+  var skillPagerSig = "";
 
   function skillSlug(id) {
     if (!id) return "";
@@ -723,9 +728,207 @@
     var value = event.currentTarget.getAttribute("data-blade-ui-skill-cat") || "";
     if (value === skillCatSelected) return;
     skillCatSelected = value;
+    skillPage = 1;
+    skillPageSig = "";
     var root = document.getElementById("blade-ui-skill-cats");
     if (root) markSkillCatPressed(root);
-    applySkillCatFilter(skillStoreCards());
+    var cards = skillStoreCards();
+    applySkillCatFilter(cards);
+    applySkillPage(cards);
+  }
+
+  function skillSearchText() {
+    var inputs = document.querySelectorAll("#unified-shell-main input, main input");
+    var i;
+    for (i = 0; i < inputs.length; i += 1) {
+      if ((inputs[i].getAttribute("placeholder") || "") !== "搜索技能") continue;
+      return (inputs[i].value || "").replace(/\s+/g, " ").trim();
+    }
+    return "";
+  }
+
+  function skillInstallTab() {
+    var tabs = skillTabRow();
+    if (!tabs) return "";
+    var buttons = tabs.children;
+    var i;
+    var fallback = "";
+    for (i = 0; i < buttons.length; i += 1) {
+      if (buttons[i].tagName !== "BUTTON") continue;
+      var label = (buttons[i].textContent || "").replace(/\s+/g, "");
+      if (!fallback) fallback = label;
+      if (String(buttons[i].className || "").indexOf("font-medium") !== -1) return label;
+    }
+    return fallback;
+  }
+
+  function skillCardKey(card, index) {
+    var id = card.getAttribute("data-blade-ui-skill-id");
+    if (id) return id;
+    var title = card.getAttribute("title") || "";
+    if (title) return title;
+    return "i" + index;
+  }
+
+  function skillFilterSig(visible) {
+    var parts = [skillSearchText(), skillInstallTab(), skillCatSelected];
+    var i;
+    for (i = 0; i < visible.length; i += 1) parts.push(skillCardKey(visible[i], i));
+    return parts.join("\u0001");
+  }
+
+  function bindSkillSearch() {
+    var inputs = document.querySelectorAll("#unified-shell-main input, main input");
+    var i;
+    for (i = 0; i < inputs.length; i += 1) {
+      var input = inputs[i];
+      if ((input.getAttribute("placeholder") || "") !== "搜索技能") continue;
+      if (input.getAttribute("data-blade-ui-skill-search") === "1") return;
+      input.setAttribute("data-blade-ui-skill-search", "1");
+      input.addEventListener("input", onSkillSearchInput);
+      return;
+    }
+  }
+
+  function bindSkillInstallReset(tabs) {
+    if (!tabs || tabs.getAttribute("data-blade-ui-skill-page-tab") === "1") return;
+    tabs.setAttribute("data-blade-ui-skill-page-tab", "1");
+    tabs.addEventListener("click", function (event) {
+      var target = event.target;
+      var button = target && target.closest ? target.closest("button") : null;
+      if (!button || !tabs.contains(button)) return;
+      var label = (button.textContent || "").replace(/\s+/g, "");
+      if (label !== "全部" && label !== "已安装" && label !== "未安装") return;
+      if (label === skillInstallTab()) return;
+      skillPage = 1;
+      skillPageSig = "";
+    });
+  }
+
+  function onSkillSearchInput() {
+    var path = window.location.pathname || "";
+    if (path !== "/skills" && path.indexOf("/skills/") !== 0) return;
+    skillPage = 1;
+    skillPageSig = "";
+    var cards = skillStoreCards();
+    applySkillCatFilter(cards);
+    applySkillPage(cards);
+  }
+
+  function skillPagerButton(label, act, disabled) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.setAttribute("data-blade-ui-skill-page-act", act);
+    button.disabled = !!disabled;
+    if (disabled) button.setAttribute("aria-disabled", "true");
+    button.addEventListener("click", onSkillPagerClick);
+    return button;
+  }
+
+  function placeSkillPager(grid, pages) {
+    var pager = document.getElementById("blade-ui-skill-pager");
+    if (!grid || !grid.parentElement || pages <= 1) {
+      if (pager && pager.parentElement) pager.parentElement.removeChild(pager);
+      skillPagerSig = "";
+      return;
+    }
+    if (!pager) {
+      pager = document.createElement("nav");
+      pager.id = "blade-ui-skill-pager";
+      pager.setAttribute("aria-label", "技能分页");
+    }
+    if (pager.previousElementSibling !== grid) grid.parentElement.insertBefore(pager, grid.nextSibling);
+    var sig = String(skillPage) + "/" + String(pages);
+    if (sig === skillPagerSig && pager.childElementCount === pages + 2) return;
+    skillPagerSig = sig;
+    while (pager.firstChild) pager.removeChild(pager.firstChild);
+    pager.appendChild(skillPagerButton("上一页", "prev", skillPage <= 1));
+    var n;
+    for (n = 1; n <= pages; n += 1) {
+      var pageBtn = skillPagerButton(String(n), String(n), false);
+      if (n === skillPage) pageBtn.setAttribute("aria-current", "page");
+      pager.appendChild(pageBtn);
+    }
+    pager.appendChild(skillPagerButton("下一页", "next", skillPage >= pages));
+  }
+
+  function revealSkillGrid(cards) {
+    if (!cards.length) return;
+    var grid = cards[0].parentElement;
+    if (!grid) return;
+    var main = grid.closest("main");
+    if (!main) return;
+    var mainRect = main.getBoundingClientRect();
+    var gridRect = grid.getBoundingClientRect();
+    if (gridRect.top >= mainRect.top && gridRect.bottom <= mainRect.bottom) return;
+    main.scrollTop += gridRect.top - mainRect.top;
+  }
+
+  function onSkillPagerClick(event) {
+    var button = event.currentTarget;
+    if (!button || button.disabled) return;
+    var act = button.getAttribute("data-blade-ui-skill-page-act") || "";
+    var cards = skillStoreCards();
+    var matched = 0;
+    var i;
+    for (i = 0; i < cards.length; i += 1) {
+      if (cards[i].getAttribute("data-blade-ui-skill-hide") === "1") continue;
+      matched += 1;
+    }
+    var pages = matched > 0 ? Math.ceil(matched / SKILL_PAGE_SIZE) : 1;
+    var next = skillPage;
+    if (act === "prev") next = skillPage - 1;
+    else if (act === "next") next = skillPage + 1;
+    else next = Number(act);
+    if (!next || next !== Math.floor(next) || next < 1 || next > pages || next === skillPage) return;
+    skillPage = next;
+    skillPagerSig = "";
+    applySkillPage(cards);
+    revealSkillGrid(cards);
+  }
+
+  function applySkillPage(cards) {
+    var visible = [];
+    var i;
+    for (i = 0; i < cards.length; i += 1) {
+      if (cards[i].getAttribute("data-blade-ui-skill-hide") === "1") {
+        if (cards[i].hasAttribute("data-blade-ui-skill-page")) cards[i].removeAttribute("data-blade-ui-skill-page");
+        continue;
+      }
+      visible.push(cards[i]);
+    }
+    var sig = skillFilterSig(visible);
+    if (sig !== skillPageSig) {
+      skillPageSig = sig;
+      skillPage = 1;
+    }
+    var pages = visible.length > 0 ? Math.ceil(visible.length / SKILL_PAGE_SIZE) : 1;
+    if (skillPage > pages) skillPage = pages;
+    if (skillPage < 1) skillPage = 1;
+    var start = (skillPage - 1) * SKILL_PAGE_SIZE;
+    var end = start + SKILL_PAGE_SIZE;
+    for (i = 0; i < visible.length; i += 1) {
+      var off = pages > 1 && (i < start || i >= end);
+      if (off) {
+        if (visible[i].getAttribute("data-blade-ui-skill-page") !== "off") visible[i].setAttribute("data-blade-ui-skill-page", "off");
+      } else if (visible[i].hasAttribute("data-blade-ui-skill-page")) {
+        visible[i].removeAttribute("data-blade-ui-skill-page");
+      }
+    }
+    var grid = visible.length ? visible[0].parentElement : (cards[0] ? cards[0].parentElement : null);
+    placeSkillPager(grid, pages);
+  }
+
+  function clearSkillPage() {
+    skillPage = 1;
+    skillPageSig = "";
+    skillPagerSig = "";
+    var hidden = document.querySelectorAll("[data-blade-ui-skill-page]");
+    var i;
+    for (i = hidden.length - 1; i >= 0; i -= 1) hidden[i].removeAttribute("data-blade-ui-skill-page");
+    var pager = document.getElementById("blade-ui-skill-pager");
+    if (pager && pager.parentElement) pager.parentElement.removeChild(pager);
   }
 
   function placeSkillCatBar(tabs) {
@@ -776,6 +979,7 @@
       skillCatTabs = null;
     }
     if (open) clearSkillHides();
+    if (skillPageSig || skillPagerSig || document.getElementById("blade-ui-skill-pager")) clearSkillPage();
   }
 
   function syncSkillCategories() {
@@ -814,6 +1018,9 @@
     skillCatTabs = tabs;
     placeSkillCatBar(tabs);
     applySkillCatFilter(cards);
+    applySkillPage(cards);
+    bindSkillSearch();
+    bindSkillInstallReset(tabs);
     bindSkillCatScroll();
   }
 

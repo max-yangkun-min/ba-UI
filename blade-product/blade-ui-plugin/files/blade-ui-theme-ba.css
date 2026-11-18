@@ -1,5 +1,6 @@
-/* blade-ui-plugin 0.2.122 — Blade Agent
+/* blade-ui-plugin 0.2.123 — Blade Agent
  * 对齐《UI界面设计规范》V1.0.4：颜色、字号、导航行、按钮、输入、表格、卡片、弹层。
+ * 0.2.123 技能目录分页：筛选结果每页 9 张，不满两页不显示分页条。
  * 0.2.122 嵌入态出现 role=dialog 或铺满视口的遮罩时通知父页面，让「AI对话」标签降到遮罩下面。
  * 0.2.114 对话首页输入栏改为「技能」「知识库」。点开直接列出可选项，占位符恢复产品原文。
  * 0.2.112 对话主列贴到右缘。问候页（含市场卡片带回的 ?kb=）保持 680px 居中窄栏。
@@ -2985,9 +2986,54 @@ div.flex.h-14.items-center.justify-between button {
   font-weight: 600 !important;
 }
 
-html[data-blade-ui-page="skills"] button[data-blade-ui-skill-hide="1"] {
+html[data-blade-ui-page="skills"] button[data-blade-ui-skill-hide="1"],
+html[data-blade-ui-page="skills"] button[data-blade-ui-skill-page="off"] {
   display: none !important;
 }
+
+/* 技能目录分页。筛选后的卡片每页 9 张，条放在网格下面。不足两页不出现。 */
+#blade-ui-skill-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 8px 4px;
+  border-radius: 4px;
+  background: hsl(216 33% 97%);
+}
+
+#blade-ui-skill-pager button {
+  height: 24px !important;
+  min-height: 24px !important;
+  min-width: 24px !important;
+  padding: 0 8px !important;
+  border: 0 !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  color: #646566 !important;
+  font-size: 12px !important;
+  line-height: 20px !important;
+  font-weight: 400 !important;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+
+#blade-ui-skill-pager button[aria-current="page"] {
+  background: #e8f3ff !important;
+  color: #237cff !important;
+  font-weight: 600 !important;
+}
+
+#blade-ui-skill-pager button:disabled {
+  color: #c8c9cc !important;
+  background: transparent !important;
+  cursor: default;
+}
+
 
 /* 嵌入对话侧栏跟原型 --sidebar-w 一样，固定 240px。
    不要 68px 图标栏，也不要拖拽出来的更宽一档。
