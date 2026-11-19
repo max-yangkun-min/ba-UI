@@ -1,5 +1,9 @@
-/* blade-ui-plugin 0.2.123 — Blade Agent
+/* blade-ui-plugin 0.2.127 — Blade Agent
  * 对齐《UI界面设计规范》V1.0.4：颜色、字号、导航行、按钮、输入、表格、卡片、弹层。
+ * 0.2.127 版本号更新。普通管理的标签由嵌入页只发「管理空间」，侧栏仍画出「AI对话」。
+ * 0.2.126 连接器弹层恢复只留「插件」。地址栏自动塞待选插件仍然不加。
+ * 0.2.125 版本号更新，让已打开的对话页重新加载侧栏顶部的「AI对话 / 开发空间」。
+ * 0.2.124 对话侧栏顶部恢复「AI对话 / 开发空间」，和新建对话同一列往下排。去掉连接器弹层「只留插件」和地址栏插件预装。技能分页仍在。
  * 0.2.123 技能目录分页：筛选结果每页 9 张，不满两页不显示分页条。
  * 0.2.122 嵌入态出现 role=dialog 或铺满视口的遮罩时通知父页面，让「AI对话」标签降到遮罩下面。
  * 0.2.114 对话首页输入栏改为「技能」「知识库」。点开直接列出可选项，占位符恢复产品原文。
@@ -3372,3 +3376,72 @@ html:has(#blade-embed-chrome-style)[data-blade-ui-row-menu="native"] #unified-sh
 }
 
 /* 0.2.117 历史对话列表滚动条不再覆盖，沿用 Blade 自带 hover-scrollbar 细条。 */
+
+/* 嵌入对话侧栏顶部的工作空间切换。样式沿用原先的浅蓝圆角胶囊：选中白底蓝字，未选中普通文字。 */
+#blade-space-tabs-host {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 100%;
+  margin: 0;
+  padding: 9px 12px 8px;
+}
+
+#blade-space-tabs-host [data-blade-space-tabs="bar"] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  margin: 0;
+  padding: 4px;
+  background: #eaf0f9;
+  border: 1px solid #e2eaf6;
+  border-radius: 11px;
+}
+
+#blade-space-tabs-host[data-cols="3"] [data-blade-space-tabs="bar"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#blade-space-tabs-host [data-blade-space-tabs="bar"] > button,
+#blade-space-tabs-host [data-blade-space-tabs="bar"] > a {
+  display: block;
+  min-width: 0;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0;
+  padding: 9px 0 !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #8293ae !important;
+  font-family: inherit;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 20px !important;
+  letter-spacing: 0;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#blade-space-tabs-host [data-blade-space-tabs="bar"] > button[aria-selected="true"] {
+  background: #fff !important;
+  color: #397bdd !important;
+  font-weight: 500 !important;
+  box-shadow: 0 2px 7px #38639813 !important;
+}
+
+#blade-space-tabs-host [data-blade-space-tabs="bar"] > button:focus-visible,
+#blade-space-tabs-host [data-blade-space-tabs="bar"] > a:focus-visible {
+  outline: 2px solid #7aa6ed;
+  outline-offset: 1px;
+}
+
+@media (max-width: 760px) {
+  #blade-space-tabs-host [data-blade-space-tabs="bar"] > button,
+  #blade-space-tabs-host [data-blade-space-tabs="bar"] > a {
+    font-size: 12px !important;
+  }
+}

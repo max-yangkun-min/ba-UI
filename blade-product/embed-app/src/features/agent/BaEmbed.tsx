@@ -5,8 +5,7 @@ import { AgentWorkbench } from "./AgentWorkbench";
 
 const origin = baOrigin();
 
-/** 和 embed-space.css 的 --space-tab-band 同一高度。只下移 Blade 侧栏，主列仍贴顶。 */
-const SPACE_TAB_BAND = 65;
+type SpaceLink = { label: string; href: string };
 
 function readEmbedAuth() {
   return fetch("/embed-auth", { cache: "no-store", credentials: "same-origin" })
@@ -29,13 +28,13 @@ type BaEmbedProps = {
   hideNav?: boolean;
   /** 内层对话可以露出来时通知外层标签。首页不传。 */
   onReady?: () => void;
-  /** 左列跳转标签盖住侧栏顶部时，让内层只把侧栏内容下移。 */
-  spaceTabs?: boolean;
+  /** 传了就让内层把「AI对话」和这些标签画进对话侧栏头部。不传表示这页没有工作空间切换。 */
+  spaceLinks?: SpaceLink[];
   /** 指定这张票交给内层。门户智能体体验用当前用户的票，不再去要超级管理员。 */
   accessToken?: string;
 };
 
-export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", frameOrigin, hideNav, onReady, spaceTabs = false, accessToken = "" }: BaEmbedProps) {
+export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", frameOrigin, hideNav, onReady, spaceLinks, accessToken = "" }: BaEmbedProps) {
   const targetOrigin = (frameOrigin || origin).replace(/\/$/, "");
   const pinnedToken = accessToken.trim();
   const [mode, setMode] = useState<EmbedMode>(targetOrigin ? "loading" : "fallback");
@@ -47,6 +46,9 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
   const onReadyRef = useRef(onReady);
   const shellWatch = useRef<MutationObserver | null>(null);
   const shellTicket = useRef(0);
+  const spaceLinksRef = useRef(spaceLinks);
+  spaceLinksRef.current = spaceLinks;
+  const spaceKey = spaceLinks ? spaceLinks.map((link) => `${link.label}\u0000${link.href}`).join("\u0001") : null;
   onReadyRef.current = onReady;
   // 只藏画面，地址在首屏就设上。标签跟着内层对话侧栏：能看到「新建对话」才出现，离开后再藏。
   const quiet = variant === "home";
@@ -150,41 +152,9 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
   }, [targetOrigin, mode]);
 
   useEffect(() => {
-    if (!spaceTabs) return;
-    const frame = frameRef.current;
-    if (!frame) return;
-    const space = frame.closest(".embed-chat-space");
-    const head = space?.querySelector(".embed-chat-space-head");
-    if (!(head instanceof HTMLElement)) return;
-
-    const post = () => {
-      if (!bladeFrameReady(frame)) return;
-      const px = Math.round(head.getBoundingClientRect().height);
-      if (px < 24 || px > 200) return;
-      applySpaceTabPad(frame, px);
-    };
-
-    post();
-    const obs = new ResizeObserver(post);
-    obs.observe(head);
-    frame.addEventListener("load", post);
-    return () => {
-      obs.disconnect();
-      frame.removeEventListener("load", post);
-    };
-  }, [spaceTabs, targetOrigin, mode]);
-
-  useEffect(() => {
-    if (!spaceTabs) return;
-    const frame = frameRef.current;
-    const head = frame?.closest(".embed-chat-space")?.querySelector(".embed-chat-space-head");
-    if (!(head instanceof HTMLElement)) return;
-    if (modalOn) head.setAttribute("inert", "");
-    else head.removeAttribute("inert");
-    return () => {
-      head.removeAttribute("inert");
-    };
-  }, [spaceTabs, modalOn, mode]);
+    if (spaceKey === null) return;
+    postSpaceTabs(frameRef.current, spaceLinksRef.current, targetOrigin);
+  }, [spaceKey, targetOrigin, mode, frameNonce]);
 
   const grant = currentPortalSession();
   const frameAllowed = grant?.mode === "admin" || grant?.mode === "user";
@@ -239,7 +209,7 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
   // mode=embed 会把整个 BA 换成无侧栏的会话页，分模块页面打不开。
   // iframe=1 只打开鉴权桥。hide_nav=1 只加在 8020 的控制台模块上，门户首页和 8010 不加。
   const hideNavFlag = hideNav ?? (variant === "module" && Boolean(origin) && targetOrigin === origin);
-  const src = embedSrc(path, parentOrigin, hideNavFlag, targetOrigin, spaceTabs);
+  const src = embedSrc(path, parentOrigin, hideNavFlag, targetOrigin);
 
   return (
     <div className={variant === "home" ? "ba-embed ba-embed-home" : "ba-embed"}>
@@ -251,12 +221,13 @@ export function BaEmbed({ path = "/", title = "Blade Agent", variant = "home", f
         src={src}
         scrolling="no"
         data-quiet={quiet && !shown ? "1" : undefined}
-        data-shell={spaceTabs ? (shellOn ? "1" : "0") : undefined}
+        data-shell={spaceLinks ? (shellOn ? "1" : "0") : undefined}
         data-modal={modalOn ? "1" : undefined}
         onLoad={(event) => {
           onReadyRef.current?.();
           const frame = event.currentTarget;
           if (quiet) watchSameOriginShell(frame);
+          postSpaceTabs(frame, spaceLinksRef.current, targetOrigin);
           const child = frame.contentWindow;
           const token = tokenRef.current;
           if (child && token) {
@@ -372,55 +343,26 @@ function frameFrom(source: MessageEventSource | null): Window | null {
   return source as Window;
 }
 
-function embedSrc(path: string, parentOrigin: string, hideNav: boolean, frameOrigin: string, spaceTabs: boolean) {
+function embedSrc(path: string, parentOrigin: string, hideNav: boolean, frameOrigin: string) {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   const base = normalized === "/" ? `${frameOrigin}/` : `${frameOrigin}${normalized}`;
   const joiner = normalized.includes("?") ? "&" : "?";
   const nav = hideNav ? "&hide_nav=1" : "";
-  const tabs = spaceTabs ? `&space_tabs=${SPACE_TAB_BAND}` : "";
-  return `${base}${joiner}iframe=1&embed_parent=${encodeURIComponent(parentOrigin)}${nav}${tabs}`;
+  return `${base}${joiner}iframe=1&embed_parent=${encodeURIComponent(parentOrigin)}${nav}`;
 }
 
-const SPACE_TAB_PAD_CSS =
-  "html[data-blade-space-tabs='1'] body #unified-shell-sidebar:not(:has(#factory-sidebar-projects-heading)){" +
-  "box-sizing:border-box!important;padding-top:var(--blade-space-tab-pad,0px)!important}";
-
-function bladeFrameReady(frame: HTMLIFrameElement) {
-  try {
-    const href = frame.contentWindow?.location.href ?? "";
-    return href.startsWith("http:");
-  } catch {
-    return true;
-  }
-}
-
-function applySpaceTabPad(frame: HTMLIFrameElement, px: number) {
-  try {
-    const doc = frame.contentDocument;
-    const root = doc?.documentElement;
-    if (doc && root) {
-      root.style.setProperty("--blade-space-tab-pad", `${px}px`);
-      root.setAttribute("data-blade-space-tabs", "1");
-      if (!doc.getElementById("blade-space-tab-pad")) {
-        const style = doc.createElement("style");
-        style.id = "blade-space-tab-pad";
-        style.textContent = SPACE_TAB_PAD_CSS;
-        (doc.head || root).appendChild(style);
-      }
-    }
-  } catch {
-    // 跨源时改由内层桥接收消息。
-  }
+function postSpaceTabs(frame: HTMLIFrameElement | null, links: SpaceLink[] | undefined, targetOrigin: string) {
+  if (!frame || !links || !targetOrigin) return;
   const child = frame.contentWindow;
   if (!child) return;
-  let target = "*";
   try {
-    target = new URL(frame.src, window.location.href).origin;
-  } catch {
-    target = "*";
-  }
-  try {
-    child.postMessage({ type: "blade-embed-sidebar-pad", px }, target);
+    child.postMessage(
+      {
+        type: "blade-embed-space-tabs",
+        tabs: links.map((link) => ({ label: link.label, href: link.href })),
+      },
+      targetOrigin,
+    );
   } catch {
     // 子页面还没落到目标源站时，加载完成会再发一次。
   }

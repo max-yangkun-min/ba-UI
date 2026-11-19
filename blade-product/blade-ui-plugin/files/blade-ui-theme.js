@@ -8,6 +8,8 @@
   var routeWatchBound = false;
   var embedShellReady = null;
   var embedModalOpen = null;
+  var embedSpaceTabs = null;
+  var embedSpaceTabsBound = false;
 
   // 运营中心整页走 Blade 原生界面：/admin 以及 ?tab= 下的总览、趋势、平台能力等。
   // 停掉主题样式表，颜色、顶栏和布局回到产品自己的样式。对话、技能、知识库和公开壳不走这里。
@@ -202,7 +204,7 @@
     var buttons = document.querySelectorAll("button");
     for (var i = 0; i < buttons.length; i += 1) {
       var el = buttons[i];
-      if (el.closest("#blade-ui-skill-cats") || el.closest("#blade-ui-skill-pager")) continue;
+      if (el.closest("#blade-ui-skill-cats") || el.closest("#blade-ui-skill-pager") || el.closest("#blade-space-tabs-host")) continue;
       if (isSkillStoreCard(el)) {
         el.removeAttribute("data-blade-ui-btn");
         el.setAttribute("data-blade-ui-card", "true");
@@ -1361,7 +1363,6 @@
     if (observer) observer.disconnect();
     try {
     dismissEmbedOnboarding();
-    preloadChatPlugin();
     if (syncOpsNative()) {
       var opsRoot = document.documentElement;
       if (opsRoot) {
@@ -1372,6 +1373,7 @@
         opsRoot.removeAttribute("data-blade-ui-error");
       }
       hideEmbedRowMenu();
+      removeSpaceTabHost();
       notifyEmbedShell();
       notifyEmbedModal();
       return;
@@ -1417,6 +1419,7 @@
     markFactorySidebar();
     markConsolePage();
     syncSkillCategories();
+    syncEmbedSpaceTabs();
     notifyEmbedShell();
     notifyEmbedModal();
     document.documentElement.removeAttribute("data-blade-ui-error");
@@ -3024,85 +3027,139 @@
     }
   }
 
-  var pendingPluginLoaded = "";
-
-  function chatPluginQuery() {
-    var params;
+  function usableSpaceHref(value) {
+    var text = String(value || "").trim();
+    if (!text || text.length > 2048) return "";
+    if (/[\u0000-\u0020<>"'`]/.test(text)) return "";
     try {
-      params = new URLSearchParams(window.location.search || "");
+      var url = new URL(text, window.location.href);
+      if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+      return url.href;
     } catch (err) {
-      return null;
+      return "";
     }
-    var name = (params.get("plugin") || "").trim();
-    if (!name) return null;
-    var label = (params.get("plugin_name") || "").trim() || name;
-    return { name: name, displayName: label };
   }
 
-  function reactFiber(el) {
-    if (!el) return null;
-    var keys = Object.keys(el);
+  function readEmbedSpaceTabs(tabs) {
+    var next = [];
     var i;
-    for (i = 0; i < keys.length; i += 1) {
-      if (keys[i].indexOf("__reactFiber") === 0) return el[keys[i]];
+    if (!Array.isArray(tabs)) return next;
+    for (i = 0; i < tabs.length && next.length < 4; i += 1) {
+      var item = tabs[i] || {};
+      var label = String(item.label || "").replace(/\s+/g, "");
+      if (label !== "开发空间" && label !== "管理空间") continue;
+      var href = item.href ? usableSpaceHref(item.href) : "";
+      if (item.href && !href) continue;
+      next.push({ label: label, href: href });
     }
-    return null;
+    return next;
   }
 
-  function pendingPluginProps(button) {
-    var fiber = reactFiber(button);
-    var guard = 0;
-    while (fiber && guard < 60) {
-      var props = fiber.memoizedProps;
-      if (props && typeof props.onPendingPluginsChange === "function") return props;
-      fiber = fiber.return;
-      guard += 1;
-    }
-    return null;
+  function bindEmbedSpaceTabs() {
+    if (embedSpaceTabsBound) return;
+    embedSpaceTabsBound = true;
+    window.addEventListener("message", function (event) {
+      if (event.source !== window.parent) return;
+      var expected = shellParentOrigin();
+      if (expected !== "*" && event.origin !== expected) return;
+      var data = event.data || {};
+      if (data.type !== "blade-embed-space-tabs") return;
+      embedSpaceTabs = readEmbedSpaceTabs(data.tabs);
+      schedule();
+    });
+    document.addEventListener("click", function (event) {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      var node = event.target;
+      if (!node || !node.closest) return;
+      var link = node.closest("#blade-space-tabs-host a[href]");
+      if (!link) return;
+      var href = usableSpaceHref(link.getAttribute("href") || "");
+      if (!href) return;
+      event.preventDefault();
+      try {
+        (window.top || window).location.href = href;
+      } catch (err) {}
+    }, true);
   }
 
-  // 对话客户端只按地址里的 skill、kb 自动插入提及，不认识 plugin。
-  // 插件要进「待选插件」，首条消息才会启用。连接器按钮上能找到这份状态。
-  function preloadChatPlugin() {
-    var wanted = chatPluginQuery();
-    if (!wanted) {
-      pendingPluginLoaded = "";
+  function clearLegacySpaceTabPad() {
+    var root = document.documentElement;
+    if (!root) return;
+    root.style.removeProperty("--blade-space-tab-pad");
+    if (root.getAttribute("data-blade-space-tabs") === "1") root.removeAttribute("data-blade-space-tabs");
+  }
+
+  function removeSpaceTabHost() {
+    var host = document.getElementById("blade-space-tabs-host");
+    if (host && host.parentElement) host.remove();
+  }
+
+  function chatSidebarSlot() {
+    var sidebar = document.getElementById("unified-shell-sidebar");
+    if (!sidebar || sidebar.querySelector("#factory-sidebar-projects-heading")) return null;
+    return sidebar.querySelector("aside:not([class*='group/rail'])") || sidebar;
+  }
+
+  function fillSpaceTabBar(bar, tabs) {
+    var signature = "AI对话\n" + tabs.map(function (tab) {
+      return tab.label + "\t" + tab.href;
+    }).join("\n");
+    if (bar.getAttribute("data-signature") === signature) return;
+    bar.setAttribute("data-signature", signature);
+    while (bar.firstChild) bar.removeChild(bar.firstChild);
+    var current = document.createElement("button");
+    current.type = "button";
+    current.setAttribute("role", "tab");
+    current.setAttribute("aria-selected", "true");
+    current.textContent = "AI对话";
+    bar.appendChild(current);
+    var i;
+    for (i = 0; i < tabs.length; i += 1) {
+      var tab = tabs[i];
+      var node;
+      if (!tab.href) {
+        node = document.createElement("button");
+        node.type = "button";
+      } else {
+        node = document.createElement("a");
+        node.href = tab.href;
+        node.target = "_top";
+      }
+      node.setAttribute("role", "tab");
+      node.setAttribute("aria-selected", "false");
+      node.textContent = tab.label;
+      bar.appendChild(node);
+    }
+  }
+
+  // 嵌入对话页的「AI对话 / 开发空间」画在侧栏内容最上面，后面的新建对话整列跟着往下排。
+  // 节点是插件自己的。React 若把它清掉，下一次 paint 再放回去，不改产品自己的侧栏节点。
+  function syncEmbedSpaceTabs() {
+    if (inEmbedFrame()) clearLegacySpaceTabPad();
+    var root = document.documentElement;
+    var collapsed = root && root.getAttribute("data-blade-ui-sidebar") === "rail";
+    var tabs = !collapsed && inEmbedFrame() && embedNewChatVisible() ? embedSpaceTabs : null;
+    var slot = tabs && tabs.length ? chatSidebarSlot() : null;
+    if (!slot) {
+      removeSpaceTabHost();
       return;
     }
-    if (pendingPluginLoaded === wanted.name) return;
-    var buttons = document.querySelectorAll("button[aria-label]");
-    var button = null;
-    var i;
-    for (i = 0; i < buttons.length; i += 1) {
-      var label = buttons[i].getAttribute("aria-label") || "";
-      if (label.indexOf("连接器") === 0) {
-        button = buttons[i];
-        break;
-      }
+    var host = document.getElementById("blade-space-tabs-host");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "blade-space-tabs-host";
     }
-    if (!button) return;
-    var props = pendingPluginProps(button);
-    if (!props) return;
-    var current = Array.isArray(props.pendingPlugins) ? props.pendingPlugins : [];
-    var exists = false;
-    for (i = 0; i < current.length; i += 1) {
-      if (current[i] && current[i].name === wanted.name) exists = true;
+    if (host.parentElement !== slot || slot.firstElementChild !== host) slot.insertBefore(host, slot.firstChild);
+    host.setAttribute("data-cols", String(1 + tabs.length));
+    var bar = host.querySelector("[data-blade-space-tabs='bar']");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.setAttribute("data-blade-space-tabs", "bar");
+      bar.setAttribute("role", "tablist");
+      bar.setAttribute("aria-label", "工作空间");
+      host.appendChild(bar);
     }
-    if (!exists) {
-      var next = current.slice();
-      next.push({
-        name: wanted.name,
-        displayName: wanted.displayName,
-        icon: null,
-        iconSource: "account"
-      });
-      try {
-        props.onPendingPluginsChange(next);
-      } catch (err) {
-        return;
-      }
-    }
-    pendingPluginLoaded = wanted.name;
+    fillSpaceTabBar(bar, tabs);
   }
 
   function schedule() {
@@ -3117,6 +3174,7 @@
   function start() {
     bindRouteWatch();
     syncOpsNative();
+    bindEmbedSpaceTabs();
     schedule();
     if (document.documentElement) {
       observer = new MutationObserver(schedule);

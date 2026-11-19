@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var PLUGIN_VERSION = "1.1.30";
+  var PLUGIN_VERSION = "1.1.31";
   var params = new URLSearchParams(window.location.search);
   var embedMode =
     params.get("mode") === "embed" ||
@@ -136,33 +136,24 @@
     }
   }
 
-  // 父页面的「AI对话 / 开发空间 / 管理空间」只盖住左列。侧栏内容下移同样的高度，主列保持贴顶。
+  // 工作空间切换挂在对话侧栏头部里。这里清掉旧的下移，避免左上角再空出一块。
   function spaceTabPadPx() {
     var raw = parseInt(params.get("space_tabs") || "", 10);
     if (raw >= 24 && raw <= 200) return raw;
     return 0;
   }
 
-  function applySpaceTabPad(px) {
-    var value = Math.round(Number(px));
-    if (!(value >= 24 && value <= 200)) return;
+  function clearSpaceTabPad() {
     var root = document.documentElement;
     if (!root) return;
-    root.style.setProperty("--blade-space-tab-pad", value + "px");
-    root.setAttribute("data-blade-space-tabs", "1");
+    root.style.removeProperty("--blade-space-tab-pad");
+    if (root.getAttribute("data-blade-space-tabs") === "1") root.removeAttribute("data-blade-space-tabs");
+    var style = document.getElementById("blade-space-tab-pad");
+    if (style && style.parentElement) style.remove();
   }
 
   function installSpaceTabPad() {
-    if (!document.getElementById("blade-space-tab-pad")) {
-      var style = document.createElement("style");
-      style.id = "blade-space-tab-pad";
-      style.setAttribute("data-blade-iframe-plugin", PLUGIN_VERSION);
-      style.textContent =
-        "html[data-blade-space-tabs='1'] body #unified-shell-sidebar:not(:has(#factory-sidebar-projects-heading)){" +
-        "box-sizing:border-box!important;padding-top:var(--blade-space-tab-pad,0px)!important}";
-      (document.head || document.documentElement).appendChild(style);
-    }
-    applySpaceTabPad(spaceTabPadPx());
+    clearSpaceTabPad();
   }
 
   function preserveSpaceTabHref(event) {
@@ -665,7 +656,7 @@
     if (originAllow && !originAllow[event.origin]) return;
     var data = event.data || {};
     if (data.type === "blade-embed-sidebar-pad") {
-      applySpaceTabPad(data.px);
+      clearSpaceTabPad();
       return;
     }
     if (data.type !== "blade-embed-token" || typeof data.token !== "string") return;
