@@ -1,7 +1,7 @@
 {
   "name": "blade-ui-plugin",
   "displayName": "BA/BH 界面规范样式",
-  "version": "0.2.127",
+  "version": "0.2.130",
   "kind": "runtime-addon",
   "independentOf": "blade-iframe-plugin",
   "targets": [

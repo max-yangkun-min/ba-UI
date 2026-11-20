@@ -828,6 +828,43 @@
     return button;
   }
 
+  function skillPagerEllipsis() {
+    var mark = document.createElement("span");
+    mark.textContent = "…";
+    mark.setAttribute("data-blade-ui-skill-page-ellipsis", "1");
+    mark.setAttribute("aria-hidden", "true");
+    return mark;
+  }
+
+  // 页码按钮最多 10 个，不含上一页/下一页。超过时保留第 1 页和最后一页，当前页靠近中间，缺口用省略号。
+  function skillPagerItems(current, pages) {
+    var max = 10;
+    var items = [];
+    var n;
+    if (pages <= max) {
+      for (n = 1; n <= pages; n += 1) items.push(n);
+      return items;
+    }
+    var inner = max - 2;
+    var start = current - Math.floor((inner - 1) / 2);
+    var end = start + inner - 1;
+    if (start < 2) {
+      start = 2;
+      end = start + inner - 1;
+    }
+    if (end > pages - 1) {
+      end = pages - 1;
+      start = end - inner + 1;
+    }
+    if (start < 2) start = 2;
+    items.push(1);
+    if (start > 2) items.push("…");
+    for (n = start; n <= end; n += 1) items.push(n);
+    if (end < pages - 1) items.push("…");
+    items.push(pages);
+    return items;
+  }
+
   function placeSkillPager(grid, pages) {
     var pager = document.getElementById("blade-ui-skill-pager");
     if (!grid || !grid.parentElement || pages <= 1) {
@@ -841,30 +878,23 @@
       pager.setAttribute("aria-label", "技能分页");
     }
     if (pager.previousElementSibling !== grid) grid.parentElement.insertBefore(pager, grid.nextSibling);
+    var items = skillPagerItems(skillPage, pages);
     var sig = String(skillPage) + "/" + String(pages);
-    if (sig === skillPagerSig && pager.childElementCount === pages + 2) return;
+    if (sig === skillPagerSig && pager.childElementCount === items.length + 2) return;
     skillPagerSig = sig;
     while (pager.firstChild) pager.removeChild(pager.firstChild);
     pager.appendChild(skillPagerButton("上一页", "prev", skillPage <= 1));
-    var n;
-    for (n = 1; n <= pages; n += 1) {
-      var pageBtn = skillPagerButton(String(n), String(n), false);
-      if (n === skillPage) pageBtn.setAttribute("aria-current", "page");
+    var i;
+    for (i = 0; i < items.length; i += 1) {
+      if (items[i] === "…") {
+        pager.appendChild(skillPagerEllipsis());
+        continue;
+      }
+      var pageBtn = skillPagerButton(String(items[i]), String(items[i]), false);
+      if (items[i] === skillPage) pageBtn.setAttribute("aria-current", "page");
       pager.appendChild(pageBtn);
     }
     pager.appendChild(skillPagerButton("下一页", "next", skillPage >= pages));
-  }
-
-  function revealSkillGrid(cards) {
-    if (!cards.length) return;
-    var grid = cards[0].parentElement;
-    if (!grid) return;
-    var main = grid.closest("main");
-    if (!main) return;
-    var mainRect = main.getBoundingClientRect();
-    var gridRect = grid.getBoundingClientRect();
-    if (gridRect.top >= mainRect.top && gridRect.bottom <= mainRect.bottom) return;
-    main.scrollTop += gridRect.top - mainRect.top;
   }
 
   function onSkillPagerClick(event) {
@@ -884,10 +914,14 @@
     else if (act === "next") next = skillPage + 1;
     else next = Number(act);
     if (!next || next !== Math.floor(next) || next < 1 || next > pages || next === skillPage) return;
+    var grid = cards[0] && cards[0].parentElement;
+    var main = grid && grid.closest ? grid.closest("main") : null;
+    var kept = main ? main.scrollTop : 0;
+    if (typeof button.blur === "function") button.blur();
     skillPage = next;
     skillPagerSig = "";
     applySkillPage(cards);
-    revealSkillGrid(cards);
+    if (main) main.scrollTop = kept;
   }
 
   function applySkillPage(cards) {

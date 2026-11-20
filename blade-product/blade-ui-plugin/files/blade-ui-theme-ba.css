@@ -1,5 +1,8 @@
-/* blade-ui-plugin 0.2.127 — Blade Agent
+/* blade-ui-plugin 0.2.130 — Blade Agent
  * 对齐《UI界面设计规范》V1.0.4：颜色、字号、导航行、按钮、输入、表格、卡片、弹层。
+ * 0.2.130 技能翻页不再把列表滚回顶部，分类条留在原来的位置。
+ * 0.2.129 技能分页页码按钮最多 10 个。超过时保留首页和末页，当前页靠近中间，缺口是省略号。
+ * 0.2.128 技能分页超过 15 页时折叠：保留首页和末页，当前页靠近中间，缺口是省略号。
  * 0.2.127 版本号更新。普通管理的标签由嵌入页只发「管理空间」，侧栏仍画出「AI对话」。
  * 0.2.126 连接器弹层恢复只留「插件」。地址栏自动塞待选插件仍然不加。
  * 0.2.125 版本号更新，让已打开的对话页重新加载侧栏顶部的「AI对话 / 开发空间」。
@@ -3036,6 +3039,18 @@ html[data-blade-ui-page="skills"] button[data-blade-ui-skill-page="off"] {
   color: #c8c9cc !important;
   background: transparent !important;
   cursor: default;
+}
+
+#blade-ui-skill-pager [data-blade-ui-skill-page-ellipsis] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  color: #646566;
+  font-size: 12px;
+  line-height: 20px;
+  user-select: none;
 }
 
 
